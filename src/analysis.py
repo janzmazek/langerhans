@@ -2,17 +2,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import colorConverter
-from scipy.signal import butter, sosfiltfilt, ricker, cwt, correlate
+from scipy.signal import butter, sosfiltfilt, ricker, cwt, correlate, savgol_filter
 from scipy import stats
 import networkx as nx
 
 # Filtration images
-Tzac1=500  # zacetek vizualizacije v izhodnih slikah, v sekundah
-Tkon1=1000  # konec vizualizacije v izhodnih slikah, v sekundah
+Tzac1=250  # zacetek vizualizacije v izhodnih slikah, v sekundah
+Tkon1=1750  # konec vizualizacije v izhodnih slikah, v sekundah
 
 # Binarization images
-Tzac2=500
-Tkon2=1000
+Tzac2=300
+Tkon2=500
+
+# Analysis snapshots
+Tzac3=1000
+Tkon3=1500
 
 # Filtration parameters
 FAST_lowBF=0.04  # spodnja frekvenca pri hitri komponenti (tipično 0.01-0.1)
@@ -21,16 +25,12 @@ FAST_highBF=0.4  # zgornja frekvenca pri hitri komponenti (tipično 0.2-2.0), zg
 SLOW_lowBF=0.001  # spodnja frekvenca pri počasni komponenti (tipično 0.001-0.005)
 SLOW_highBF=0.005  # zgornja frekvenca pri počasni komponenti (tipično 0.02-0.1)
 
-
-
 # Binarization parameters
-PB=4  # pricakovana dolzina oscilacij
+PB=2  # pricakovana dolzina oscilacij
 act_slope=1.4   # mejni odvod  (med 1 in 2)
 amp_faktor=1.4 # amplitudni faktor (med 1 in 2)
 step=1   #int(round(sampling/2.0))
 
-CORR_SLOW = 0.9
-CORR_FAST = 0.75
 
 class Analysis(object):
     """docstring for Analysis."""
@@ -39,7 +39,9 @@ class Analysis(object):
         data = np.loadtxt(data_name)
         self.__time = data[:-1,0]
         self.__signal = data[:-1,1:]
+        # self.__signal = np.loadtxt(data_name)
         self.__sampling=int(np.loadtxt(sampling_name))
+        # self.__time = np.arange(0,self.__signal.shape[0])*1/self.__sampling
         self.__positions = np.loadtxt(positions_name)
 
         self.__data_points = len(self.__time)
@@ -55,6 +57,9 @@ class Analysis(object):
 
         self.__G_slow = False
         self.__G_fast = False
+
+    def get_signal(self):
+        return self.__signal
 
     def import_slow(self, path):
         self.__filtered_slow = np.loadtxt(path, delimiter=",")
@@ -106,62 +111,26 @@ class Analysis(object):
     def plot_filtered(self, directory):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             raise ValueError("No filtered data!")
-        Tzac=int(Tzac1*self.__sampling)
-        Tkon=int(Tkon1*self.__sampling)
         for i in range(self.__number_of_cells):
             print(i)
-            plt.figure(figsize=(12.5,5.0))
-            plt.subplot(221)
-            plt.plot(self.__time,self.__signal[:,i],linewidth=0.5,color='dimgrey')
-            plt.title(r'trace $ %ld $: FAST: %.3f --> %.3f  SLOW: %.4f --> %.4f'%(float(i)/1.0,(FAST_lowBF),(FAST_highBF),(SLOW_lowBF),(SLOW_highBF)),fontsize=8)
-            plt.rc('font', size=6)
-            plt.subplot(222)
-            miny=np.min(self.__signal[(Tzac):(Tkon),i])
-            maxy=np.max(self.__signal[(Tzac):(Tkon),i])
-            plt.plot(self.__time,self.__signal[:,i],linewidth=0.67,color='dimgrey')
-            plt.xlim([Tzac1,Tkon1])
-            plt.ylim([miny-0.05,maxy+0.05])
-            plt.subplot(223)
-            miny=np.min(self.__filtered_fast[Tzac:Tkon,i])
-            maxy=np.max(self.__filtered_fast[Tzac:Tkon,i])
-            plt.plot(self.__time,self.__filtered_fast[:,i],linewidth=0.67,color='dimgrey')
-            plt.xlim([Tzac1,Tkon1])
-            plt.ylim([miny*1.05-0.05,maxy*1.05+0.05])
-            plt.xlabel('time (s)', fontsize=6)
-            plt.subplot(224)
-            miny=np.min(self.__filtered_slow[Tzac:Tkon,i])
-            maxy=np.max(self.__filtered_slow[Tzac:Tkon,i])
-            plt.plot(self.__time,self.__filtered_slow[:,i],linewidth=0.67,color='dimgrey')
-            plt.xlim([Tzac1,Tkon1])
-            plt.ylim([miny*1.05-0.05,maxy*1.05+0.05])
-            plt.xlabel('time (s)', fontsize=6)
+            mean = np.mean(self.__signal[:,i])
 
-            plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
+            plt.figure(figsize=(12.5,5.0))
+            plt.subplot(211)
+            plt.plot(self.__time,self.__signal[:,i]-mean,linewidth=0.5,color='dimgrey')
+            plt.plot(self.__time,self.__filtered_slow[:,i],linewidth=2,color='blue')
+
+            plt.subplot(212)
+            plt.plot(self.__time,self.__signal[:,i]-mean,linewidth=0.5,color='dimgrey')
+            plt.plot(self.__time,self.__filtered_fast[:,i],linewidth=0.5,color='red')
+
+            plt.savefig("{0}/{1}.png".format(directory, i), dpi=200, bbox_inches='tight')
             plt.close()
 
-    def __smooth(self, data, N):
-        result=np.zeros((self.__data_points,self.__number_of_cells))
-
-        for rep in range(self.__number_of_cells):
-            zamik=int(np.round(N/2))
-            for i in range(zamik-1,self.__data_points-zamik,1):
-                avg=0.0
-                for j in range(i-zamik+1,i+zamik,1):
-                    avg=avg+data[j][rep]
-                result[i][rep]=avg/(float)(N)
-
-            for i in range(0,zamik,1):
-                result[i][rep]=np.mean(data[i:(i+zamik),rep])
-            for i in range(self.__data_points-1*zamik,self.__data_points,1):
-                result[i][rep]=np.mean(data[(i-zamik):i,rep])
-
-        return result
-
-    def smooth_fast(self, repeats, N):
+    def smooth_fast(self):
         if self.__filtered_fast is False:
-            raise ValueError("No filtered data!")
-        for i in range(repeats):
-            self.__filtered_fast = self.__smooth(self.__filtered_fast, N)
+            raise ValueError("No filtered data")
+        self.__filtered_fast = savgol_filter(self.__filtered_fast, 51, 2)
 
     def binarize_slow(self):
         self.__binarized_slow = np.zeros((self.__data_points, self.__number_of_cells))
@@ -343,7 +312,7 @@ class Analysis(object):
             plt.rc('font', size=6)
             plt.xlabel('time (s)', fontsize=6)
             #plt.savefig("binarized/bin_trace_%d.jpg"%(rep),dpi=200,bbox_inches = 'tight')
-            plt.savefig("{0}/{1}.pdf".format(directory, rep), dpi=200, bbox_inches='tight')
+            plt.savefig("{0}/{1}.png".format(directory, rep), dpi=200, bbox_inches='tight')
             plt.close()
 
     def compare_slow_fast(self):
@@ -370,7 +339,23 @@ class Analysis(object):
 
         densities = {i: properties[i]["spikes"]/properties[i]["lengths"] for i in range(13)}
 
-        return densities
+
+        x0 = (np.pi/3 - np.pi/6)/2
+        d = np.pi/6
+        phi = [x0+d*i for i in range(12)]
+        bars = np.array([(-np.cos(i)+1)/2 for i in phi])
+        data = np.array([densities[i] for i in range(1, len(densities))])
+        norm_data = data/np.max(data)
+
+        # plt.plot(phi, bars, phi, norm_data)
+        # plt.show()
+
+        # colors = plt.cm.seismic(norm_data)
+        # ax = plt.subplot(111, projection="polar")
+        # ax.bar(phi, norm_data, width=2*np.pi/12, bottom=0.0, color=colors)
+        # plt.show()
+
+        return (phi, bars, norm_data)
 
     def compare_correlation_distance(self):
         distances = []
@@ -387,9 +372,27 @@ class Analysis(object):
                 correlations_slow.append(correlation_slow)
                 correlations_fast.append(correlation_fast)
 
-        plt.scatter(distances, correlations_slow)
-        plt.scatter(distances, correlations_fast)
-        plt.show()
+        return (distances, correlations_slow, correlations_fast)
+
+        # plt.scatter(distances, correlations_slow)
+        # plt.scatter(distances, correlations_fast)
+        # plt.show()
+
+
+        # slow_intervals = {key: 0 for key in range(0, int(max(distances)),20)}
+        # fast_intervals = {key: 0 for key in range(0, int(max(distances)),20)}
+        # for start in slow_intervals:
+        #     for i in range(len(distances)):
+        #         if distances[i] >= start and distances[i] < start+20:
+        #             slow_intervals[start] += correlations_slow[i]
+        #             fast_intervals[start] += correlations_fast[i]
+        # return (slow_intervals, fast_intervals)
+
+
+
+
+    def get_positions(self):
+        return self.__positions
 
 
     def exclude(self):
@@ -411,7 +414,7 @@ class Analysis(object):
         self.__binarized_slow = np.delete(self.__binarized_slow, self.__excluded, axis=1)
         self.__binarized_fast = np.delete(self.__binarized_fast, self.__excluded, axis=1)
 
-    def build_network(self):
+    def build_network(self, slow_threshold, fast_threshold):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             raise ValueError("No filtered data.")
         if self.__positions is False:
@@ -431,10 +434,10 @@ class Analysis(object):
         A_fast = np.zeros((self.__number_of_cells, self.__number_of_cells))
         for i in range(self.__number_of_cells):
             for j in range(i):
-                if correlation_matrix_slow[i,j]>CORR_SLOW:
+                if correlation_matrix_slow[i,j]>slow_threshold:
                     A_slow[i,j] = 1
                     A_slow[j,i] = 1
-                if correlation_matrix_fast[i,j]>CORR_FAST:
+                if correlation_matrix_fast[i,j]>fast_threshold:
                     A_fast[i,j] = 1
                     A_fast[j,i] = 1
 
@@ -445,6 +448,20 @@ class Analysis(object):
         nx.draw(self.__G_slow, pos=self.__positions, ax=ax[0], with_labels=True, node_color="pink")
         nx.draw(self.__G_fast, pos=self.__positions, ax=ax[1], with_labels=True, node_color="purple")
         plt.show()
+
+        average_slow_degree = np.mean([self.__G_slow.degree[i] for i in self.__G_slow])
+        average_fast_degree = np.mean([self.__G_fast.degree[i] for i in self.__G_fast])
+
+        # return (average_slow_degree, average_fast_degree)
+        return (average_slow_degree, average_fast_degree)
+
+    def get_adjacency(self):
+        adjacency_slow = nx.to_numpy_matrix(self.__G_slow)
+        adjacency_fast = nx.to_numpy_matrix(self.__G_fast)
+        return (adjacency_slow, adjacency_fast)
+
+    def get_excluded_positions(self, path):
+        np.savetxt(path, self.__positions)
 
 
 
@@ -462,7 +479,9 @@ class Analysis(object):
             interspike_fast = []
 
             # Find average frequency of fast data
-            for i in range(700*self.__sampling, 1700*self.__sampling):
+            start = int(Tzac3*self.__sampling)
+            stop = int(Tkon3*self.__sampling)
+            for i in range(start, stop):
                 if self.__binarized_fast[i,cell] == 1 and state == 0:
                     spikes += 1
                     state = 1
@@ -479,9 +498,17 @@ class Analysis(object):
             spikes = 0
             state = 0
             interspike = 0
+            i_start = 0
+            i_end = 0
+            end_check = 0
             for i in range(self.__data_points):
                 if self.__binarized_slow[i, cell] == 12 and state == 0:
+                    if i_start == 0:
+                        i_start = i
                     spikes += 1
+                    if i_end==0 or end_check!=spikes:
+                        i_end = i
+                        end_check = spikes
                     state = 1
                     interspike_slow.append(interspike/self.__sampling)
                 elif self.__binarized_slow[i,cell] != 12 and state == 1:
@@ -490,7 +517,7 @@ class Analysis(object):
 
                 elif self.__binarized_slow[i,cell] != 12 and state == 0:
                     interspike += 1
-            parameters[cell]["Fs"] = spikes/self.__data_points*self.__sampling
+            parameters[cell]["Fs"] = (spikes-1)/(i_end-i_start)*self.__sampling
 
             # Find first peak of fast data
             for i in range(150*self.__sampling, self.__data_points):
@@ -555,37 +582,3 @@ class Analysis(object):
                     slope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
                     f.write("{}\t".format(round(r_value, 2)))
                 f.write("\n")
-
-
-
-    # def animation(self):
-    #     color = lambda potential: "yellow" if potential==1 else "green"
-    #     self.__color_map = np.vectorize(color)(self.__binarized_fast)
-    #
-    #     fig, ax = plt.subplots()
-    #     scatter = nx.draw_networkx_nodes(self.__G,
-    #                                      pos=self.__positions,
-    #                                      ax=ax,
-    #                                      node_color=self.__color_map[0,:])
-    #     labels = nx.draw_networkx_labels(self.__G, pos=self.__positions, ax=ax)
-    #     lines = nx.draw_networkx_edges(self.__G, pos=self.__positions, ax=ax)
-    #
-    #     def animate(i, scatter):
-    #         if i%1000==0:
-    #             print("{0}/{1}".format(i//1000, self.__data_points//1000))
-    #         elif i==self.__data_points-1:
-    #             print("The end")
-    #         colors = self.__color_map[i,:]
-    #
-    #         try:
-    #             rgba_colors = np.array([colorConverter.to_rgba(colors)])
-    #         except ValueError:
-    #             rgba_colors = np.array([colorConverter.to_rgba(color) for color in colors])
-    #         scatter.set_color(rgba_colors)
-    #
-    #
-    #     ani = animation.FuncAnimation(fig, animate,
-    #                     frames=self.__data_points, fargs=(scatter, ), interval=1, repeat=False)
-    #     ani.save('animation.gif', writer='imagemagick', fps=5)
-    #
-    #     # plt.show()
