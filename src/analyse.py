@@ -117,10 +117,10 @@ def build_network(self, slow_threshold, fast_threshold):
     A_fast = np.zeros((self.__number_of_cells, self.__number_of_cells))
     for i in range(self.__number_of_cells):
         for j in range(i):
-            if correlation_matrix_slow[i,j]>slow_threshold:
+            if correlation_matrix_slow[i,j]>self.settings["slow_threshold"]:
                 A_slow[i,j] = 1
                 A_slow[j,i] = 1
-            if correlation_matrix_fast[i,j]>fast_threshold:
+            if correlation_matrix_fast[i,j]>self.settings["fast_threshold"]:
                 A_fast[i,j] = 1
                 A_fast[j,i] = 1
 

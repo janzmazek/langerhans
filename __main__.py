@@ -16,6 +16,7 @@ settings = f("{0}/{1}/settings.yaml".format(LOCATION, DATA))
 excluded = f("{0}/{1}/excluded{1}.dat".format(LOCATION, DATA))
 
 filtered = f("{0}/{1}/filtered".format(LOCATION, DATA))
+distributions = f("{0}/{1}/distributions".format(LOCATION, DATA))
 binarized = f("{0}/{1}/binarized".format(LOCATION, DATA))
 
 # ---------------------------------- FIlTER ---------------------------------- #
@@ -25,10 +26,10 @@ def filter_data():
         analysis.import_fast(filtered + "/fast")
     else:
         analysis.filter()
-        analysis.smooth_fast()
-        # analysis.save_slow(filtered + "/slow")
-        # analysis.save_fast(filtered + "/fast")
-        analysis.plot_filtered(filtered)
+        # analysis.plot_filtered(filtered)
+        analysis.compute_distributions()
+        # analysis.plot_distributions(distributions)
+        analysis.binarize_fast(binarized)
 
 # --------------------------------- BINARIZE --------------------------------- #
 def binarize():
@@ -52,8 +53,8 @@ def exclude():
 # --------------------------------- ANALYSIS --------------------------------- #
 analysis = Analysis(series, sampling, positions, settings)
 filter_data()
-binarize()
-exclude()
+# binarize()
+# exclude()
 
 # print(analysis.compare_slow_fast())
 # (distances, correlations_slow, correlations_fast) = analysis.compare_correlation_distance()
