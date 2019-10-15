@@ -152,23 +152,23 @@ class Data(object):
             roots = np.roots(second_derivative)
             real_roots = roots.real[abs(roots.imag) < 1e-5]
             final_roots = real_roots[np.logical_and(real_roots > 0, real_roots < bins[-1])]
-            min_root = min(final_roots)
-            min_value = first_derivative(min_root)
+            p_root = min(final_roots)
+            min_value = first_derivative(p_root)
 
             # Quadratic function around 0
             q = np.poly1d([second_derivative(0)/2, first_derivative(0), p(0)])
             q_root = np.roots(np.polyder(q, 1))
             q_root = q_root[0] if q_root>0 or q_root>bins[-1] else np.inf
 
-            # Objective function (grade)
+            # Goodness score
             phi = np.arctan(abs(min_value))/(np.pi/2)
-            objective_function = (1-phi)*min_root/q_root
+            score = (1-phi)*p_root/q_root
 
             # Excluding thresholds
-            objective_threshold = self.__settings["exclude"]["objective_threshold"]
+            score_threshold = self.__settings["exclude"]["score_threshold"]
             spikes_threshold = self.__settings["exclude"]["spikes_threshold"]
 
-            if objective_function<objective_threshold or np.exp(p(min_root))<spikes_threshold*self.__data_points:
+            if score<score_threshold or np.exp(p(p_root))<spikes_threshold*self.__data_points:
                 exclude = True
             else:
                 exclude = False
@@ -177,11 +177,10 @@ class Data(object):
             self.__distributions[cell]["bins"] = x
             self.__distributions[cell]["p"] = p
             self.__distributions[cell]["q"] = q
-            self.__distributions[cell]["p_root"] = min_root
-            self.__distributions[cell]["p_value"] = min_value
+            self.__distributions[cell]["p_root"] = p_root
             self.__distributions[cell]["q_root"] = q_root
             self.__distributions[cell]["exclude"] = exclude
-            self.__distributions[cell]["objective_function"] = objective_function
+            self.__distributions[cell]["score"] = score
 
     def plot_distributions(self, directory):
         if self.__distributions is False:
@@ -193,17 +192,16 @@ class Data(object):
             p = self.__distributions[cell]["p"]
             q = self.__distributions[cell]["q"]
             p_root = self.__distributions[cell]["p_root"]
-            p_value = self.__distributions[cell]["p_value"]
             q_root = self.__distributions[cell]["q_root"]
             exclude = self.__distributions[cell]["exclude"]
-            objective_function = self.__distributions[cell]["objective_function"]
+            score = self.__distributions[cell]["score"]
 
             fig, (ax1, ax2) = plt.subplots(2, 1)
             if exclude:
                 ax1.set_facecolor('xkcd:salmon')
-                fig.suptitle("Score = {0:.2f} ({1})".format(objective_function, "EXCLUDE"))
+                fig.suptitle("Score = {0:.2f} ({1})".format(score, "EXCLUDE"))
             else:
-                fig.suptitle("Score = {0:.2f} ({1})".format(objective_function, "KEEP"))
+                fig.suptitle("Score = {0:.2f} ({1})".format(score, "KEEP"))
 
             mean = np.mean(self.__signal[:,cell])
             ax1.plot(self.__time,self.__signal[:,cell]-mean,linewidth=0.5,color='dimgrey', zorder=0)
@@ -269,18 +267,33 @@ class Data(object):
             if self.__distributions[cell]["exclude"] is True:
                 continue
 
-            fig, (ax1, ax2) = plt.subplots(2, 1)
+            fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+            fig.suptitle("Binarized data")
+
             mean = np.mean(self.__signal[:,cell])
+            max_signal = max(abs(self.__signal[:,cell]-mean))
+            norm_signal = (self.__signal[:,cell]-mean)/max_signal
+            max_fast = max(abs(self.__filtered_fast[:,cell]))
+
             filtered_fast = self.__filtered_fast[:,cell]
             threshold = self.__distributions[cell]["p_root"]
-            ax1.plot(self.__time, (self.__signal[:,cell]-mean)/2, linewidth=0.5, color='dimgrey', alpha=0.5)
+            ax1.plot(self.__time, norm_signal*max_fast, linewidth=0.5, color='dimgrey', alpha=0.5)
             ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='red')
             ax1.plot(self.__time, self.__binarized_fast[:,cell]*threshold, linewidth=0.75, color='black')
+            ax1.set_ylabel("Amplitude")
+
+            ax3 = ax1.twinx()
+            ax3.set_ylabel("Action potentials")
 
             filtered_slow = self.__filtered_slow[:,cell]
-            ax2.plot(self.__time, (self.__signal[:,cell]-mean)/2, linewidth=0.5, color='dimgrey', alpha=0.5)
+            ax2.plot(self.__time, 12/2*(norm_signal+1), linewidth=0.5, color='dimgrey', alpha=0.5)
             ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='blue')
             ax2.plot(self.__time, self.__binarized_slow[:,cell], color='black')
+            ax2.set_xlabel("Time [s]")
+            ax2.set_ylabel("Amplitude")
+
+            ax4 = ax2.twinx()
+            ax4.set_ylabel("Phase")
 
             plt.savefig("{0}/{1}.pdf".format(directory, cell), dpi=200, bbox_inches='tight')
             plt.close()

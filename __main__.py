@@ -24,8 +24,10 @@ data = Data(series, sampling, settings)
 
 data.filter()
 data.compute_distributions()
+# data.plot_distributions(distributions)
 data.binarize_fast()
 data.binarize_slow()
+data.plot_binarized(binarized)
 
 networks = Networks(data, positions)
 networks.build_network()
