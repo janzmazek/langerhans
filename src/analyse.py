@@ -57,100 +57,7 @@ def compare_correlation_distance(self):
 
     return (distances, correlations_slow, correlations_fast)
 
-    # plt.scatter(distances, correlations_slow)
-    # plt.scatter(distances, correlations_fast)
-    # plt.show()
-
-
-    # slow_intervals = {key: 0 for key in range(0, int(max(distances)),20)}
-    # fast_intervals = {key: 0 for key in range(0, int(max(distances)),20)}
-    # for start in slow_intervals:
-    #     for i in range(len(distances)):
-    #         if distances[i] >= start and distances[i] < start+20:
-    #             slow_intervals[start] += correlations_slow[i]
-    #             fast_intervals[start] += correlations_fast[i]
-    # return (slow_intervals, fast_intervals)
-
-
-
-
-def get_positions(self):
-    return self.__positions
-
-
-def exclude(self):
-    if self.__excluded is False:
-        raise ValueError("No excluded data!")
-    if self.__filtered_slow is False or self.__filtered_fast is False:
-        raise ValueError("No filtered data.")
-    if self.__binarized_slow is False or self.__filtered_fast is False:
-        raise ValueError("No binarized data.")
-
-    deletions = self.__excluded.size
-
-    self.__signal = np.delete(self.__signal, self.__excluded, axis=1)
-    self.__positions = np.delete(self.__positions, self.__excluded, axis=0)
-    self.__number_of_cells -= deletions
-
-    self.__filtered_slow = np.delete(self.__filtered_slow, self.__excluded, axis=1)
-    self.__filtered_fast = np.delete(self.__filtered_fast, self.__excluded, axis=1)
-    self.__binarized_slow = np.delete(self.__binarized_slow, self.__excluded, axis=1)
-    self.__binarized_fast = np.delete(self.__binarized_fast, self.__excluded, axis=1)
-
-def build_network(self, slow_threshold, fast_threshold):
-    if self.__filtered_slow is False or self.__filtered_fast is False:
-        raise ValueError("No filtered data.")
-    if self.__positions is False:
-        raise ValueError("No positions.")
-    correlation_matrix_slow = np.eye(self.__number_of_cells)
-    correlation_matrix_fast = np.eye(self.__number_of_cells)
-    for i in range(self.__number_of_cells):
-        for j in range(i):
-            correlation = np.corrcoef(self.__filtered_slow[:,i], self.__filtered_slow[:,j])[0,1]
-            correlation_matrix_slow[i,j] = correlation
-            correlation_matrix_slow[j,i] = correlation
-            correlation = np.corrcoef(self.__filtered_fast[:,i], self.__filtered_fast[:,j])[0,1]
-            correlation_matrix_fast[i,j] = correlation
-            correlation_matrix_fast[j,i] = correlation
-
-    A_slow = np.zeros((self.__number_of_cells, self.__number_of_cells))
-    A_fast = np.zeros((self.__number_of_cells, self.__number_of_cells))
-    for i in range(self.__number_of_cells):
-        for j in range(i):
-            if correlation_matrix_slow[i,j]>self.settings["slow_threshold"]:
-                A_slow[i,j] = 1
-                A_slow[j,i] = 1
-            if correlation_matrix_fast[i,j]>self.settings["fast_threshold"]:
-                A_fast[i,j] = 1
-                A_fast[j,i] = 1
-
-    self.__G_slow = nx.from_numpy_matrix(A_slow)
-    self.__G_fast = nx.from_numpy_matrix(A_fast)
-
-    fig, ax = plt.subplots(nrows=2, ncols=1)
-    nx.draw(self.__G_slow, pos=self.__positions, ax=ax[0], with_labels=True, node_color="pink")
-    nx.draw(self.__G_fast, pos=self.__positions, ax=ax[1], with_labels=True, node_color="purple")
-    plt.show()
-
-    average_slow_degree = np.mean([self.__G_slow.degree[i] for i in self.__G_slow])
-    average_fast_degree = np.mean([self.__G_fast.degree[i] for i in self.__G_fast])
-
-    # return (average_slow_degree, average_fast_degree)
-    return (average_slow_degree, average_fast_degree)
-
-def get_adjacency(self):
-    adjacency_slow = nx.to_numpy_matrix(self.__G_slow)
-    adjacency_fast = nx.to_numpy_matrix(self.__G_fast)
-    return (adjacency_slow, adjacency_fast)
-
-def get_excluded_positions(self, path):
-    np.savetxt(path, self.__positions)
-
-
-
 def dynamics_parameters(self):
-    if self.__G_slow is False or self.__G_fast is False:
-        raise ValueError("No built network.")
     parameters = [dict() for i in range(self.__number_of_cells)]
 
     for cell in range(self.__number_of_cells):
@@ -228,22 +135,6 @@ def dynamics_parameters(self):
         # Find interspike variations
         parameters[cell]["ISIVs"] = np.std(interspike_slow)/np.mean(interspike_slow)
         parameters[cell]["ISIVf"] = np.std(interspike_fast)/np.mean(interspike_fast)
-
-    return parameters
-
-
-def topology_parameters(self):
-    if self.__G_slow is False or self.__G_fast is False:
-        raise ValueError("No built network.")
-    parameters = [dict() for i in range(self.__number_of_cells)]
-
-    for cell in range(self.__number_of_cells):
-        parameters[cell]["NDs"] = self.__G_slow.degree[cell]
-        parameters[cell]["NDf"] = self.__G_fast.degree[cell]
-        parameters[cell]["Cs"] = nx.clustering(self.__G_slow)[cell]
-        parameters[cell]["Cf"] = nx.clustering(self.__G_fast)[cell]
-        parameters[cell]["NNDs"] = nx.average_neighbor_degree(self.__G_slow)[cell]
-        parameters[cell]["NNDf"] = nx.average_neighbor_degree(self.__G_fast)[cell]
 
     return parameters
 

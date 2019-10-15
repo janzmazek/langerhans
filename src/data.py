@@ -8,13 +8,12 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import colorConverter
 
-import networkx as nx
 import yaml
 
-class Analysis(object):
+class Data(object):
     """docstring for Analysis."""
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, data_name, sampling_name, positions_name, settings):
+    def __init__(self, data_name, sampling_name, settings):
         with open(settings, 'r') as stream:
             try:
                 self.__settings = yaml.safe_load(stream)
@@ -27,7 +26,6 @@ class Analysis(object):
         # self.__signal = np.loadtxt(data_name)
         self.__sampling=int(np.loadtxt(sampling_name))
         # self.__time = np.arange(0,self.__signal.shape[0])*1/self.__sampling
-        self.__positions = np.loadtxt(positions_name)
 
         self.__data_points = len(self.__time)
         self.__number_of_cells = len(self.__signal[0])
@@ -39,9 +37,6 @@ class Analysis(object):
 
         self.__binarized_slow = False
         self.__binarized_fast = False
-
-        self.__G_slow = False
-        self.__G_fast = False
 
 # -------------------------------- IMPORTERS --------------------------------- #
     def import_filtered_slow(self, path):
@@ -72,6 +67,18 @@ class Analysis(object):
 
     def save_binarized_fast(self, path):
         np.savetxt(path, self.__binarized_fast, fmt="%d")
+
+# --------------------------------- GETTERS ---------------------------------- #
+    def get_settings(self): return self.__settings
+    def get_time(self): return self.__time
+    def get_signal(self): return self.__signal
+    def get_data_points(self): return self.__data_points
+    def get_number_of_cells(self): return self.__number_of_cells
+    def get_filtered_slow(self): return self.__filtered_slow
+    def get_filtered_fast(self): return self.__filtered_fast
+    def get_distributions(self): return self.__distributions
+    def get_binarized_slow(self): return self.__binarized_slow
+    def get_binarized_fast(self): return self.__binarized_fast
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
 # ---------- Filter + smooth ---------- #
@@ -123,6 +130,8 @@ class Analysis(object):
 # ---------- Binarize ---------- #
 
     def compute_distributions(self):
+        if self.__filtered_slow is False:
+            raise ValueError("No filtered data.")
         self.__distributions = [dict() for i in range(self.__number_of_cells)]
         for cell in range(self.__number_of_cells):
             # Compute cumulative histogram and bins
@@ -253,7 +262,6 @@ class Analysis(object):
             self.__binarized_slow.astype(int)
 
     def plot_binarized(self, directory):
-
         if self.__binarized_slow is False or self.__binarized_fast is False:
             raise ValueError("No filtered data!")
 
@@ -262,21 +270,19 @@ class Analysis(object):
                 continue
 
             fig, (ax1, ax2) = plt.subplots(2, 1)
+            mean = np.mean(self.__signal[:,cell])
             filtered_fast = self.__filtered_fast[:,cell]
             threshold = self.__distributions[cell]["p_root"]
-            ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='dimgrey')
-            ax1.plot(self.__time, self.__binarized_fast[:,cell]*threshold, linewidth=0.75, color='red')
+            ax1.plot(self.__time, (self.__signal[:,cell]-mean)/2, linewidth=0.5, color='dimgrey', alpha=0.5)
+            ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='red')
+            ax1.plot(self.__time, self.__binarized_fast[:,cell]*threshold, linewidth=0.75, color='black')
 
             filtered_slow = self.__filtered_slow[:,cell]
-            ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='dimgrey')
-            ax2.plot(self.__time, self.__binarized_slow[:,cell], color='blue')
+            ax2.plot(self.__time, (self.__signal[:,cell]-mean)/2, linewidth=0.5, color='dimgrey', alpha=0.5)
+            ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='blue')
+            ax2.plot(self.__time, self.__binarized_slow[:,cell], color='black')
 
             plt.savefig("{0}/{1}.pdf".format(directory, cell), dpi=200, bbox_inches='tight')
             plt.close()
 
             print(cell)
-
-
-
-
-# ---------- Analysis ---------- #
