@@ -28,8 +28,10 @@ def filter_data():
         analysis.filter()
         # analysis.plot_filtered(filtered)
         analysis.compute_distributions()
-        # analysis.plot_distributions(distributions)
-        analysis.binarize_fast(binarized)
+        analysis.plot_distributions(distributions)
+        analysis.binarize_fast()
+        analysis.binarize_slow()
+        analysis.plot_binarized(binarized)
 
 # --------------------------------- BINARIZE --------------------------------- #
 def binarize():

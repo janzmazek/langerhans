@@ -213,24 +213,68 @@ class Analysis(object):
             plt.savefig("{0}/{1}.pdf".format(directory, cell))
             plt.close()
 
-    def binarize_fast(self, directory):
+    def binarize_fast(self):
         if self.__distributions is False or self.__filtered_fast is False:
             raise ValueError("No distribution or filtered data.")
         self.__binarized_fast = np.zeros((self.__data_points, self.__number_of_cells))
         for cell in range(self.__number_of_cells):
             if self.__distributions[cell]["exclude"] is True:
                 pass
-            threshold = self.__distributions[cell]["p_value"]
-            self.__binarized_fast[:,cell] = np.heaviside(self.__filtered_fast[:,cell], 1)
-        print(self.__binarized_fast)
+            threshold = self.__distributions[cell]["p_root"]
+            self.__binarized_fast[:,cell] = np.where(self.__filtered_fast[:,cell]>threshold, 1, 0)
 
     def binarize_slow(self):
-        pass
+        if self.__filtered_slow is False:
+            raise ValueError("No filtered data.")
+        self.__binarized_slow = np.zeros((self.__data_points, self.__number_of_cells))
+        for cell in range(self.__number_of_cells):
+            signal = self.__filtered_slow[:,cell]
+            self.__binarized_slow[:,cell] = np.heaviside(np.gradient(signal), 0)
+            extremes = []
+            for i in range(1, self.__data_points):
+                if self.__binarized_slow[i,cell]!=self.__binarized_slow[i-1,cell]:
+                    extremes.append(i)
 
-    def plot_binarized(self):
-        pass
+            up = self.__binarized_slow[0,cell]
+            counter = 0
+            for e in extremes:
+                interval = e-counter
+                for phi in range(6):
+                    lower = counter+int(np.floor(interval/6*phi))
+                    higher = counter+int(np.floor(interval/6*(phi+1)))
+                    add = 1 if up else 7
+                    self.__binarized_slow[lower:higher,cell] = phi+add
+                up = (up+1)%2
+                counter = e
 
+            # Erase values (from 0 to first extreme) and (last extreme to end)
+            self.__binarized_slow[0:extremes[0],cell] = 0
+            self.__binarized_slow[extremes[-1]:,cell] = 0
+            self.__binarized_slow.astype(int)
 
+    def plot_binarized(self, directory):
+
+        if self.__binarized_slow is False or self.__binarized_fast is False:
+            raise ValueError("No filtered data!")
+
+        for cell in range(self.__number_of_cells):
+            if self.__distributions[cell]["exclude"] is True:
+                continue
+
+            fig, (ax1, ax2) = plt.subplots(2, 1)
+            filtered_fast = self.__filtered_fast[:,cell]
+            threshold = self.__distributions[cell]["p_root"]
+            ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='dimgrey')
+            ax1.plot(self.__time, self.__binarized_fast[:,cell]*threshold, linewidth=0.75, color='red')
+
+            filtered_slow = self.__filtered_slow[:,cell]
+            ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='dimgrey')
+            ax2.plot(self.__time, self.__binarized_slow[:,cell], color='blue')
+
+            plt.savefig("{0}/{1}.pdf".format(directory, cell), dpi=200, bbox_inches='tight')
+            plt.close()
+
+            print(cell)
 
 
 
