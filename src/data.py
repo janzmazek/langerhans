@@ -8,22 +8,17 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import colorConverter
 
-import yaml
-
 class Data(object):
-    """docstring for Analysis."""
+    """
+    A class for signal analysis.
+    """
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, data_name, sampling_name, settings):
-        with open(settings, 'r') as stream:
-            try:
-                self.__settings = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                raise(ValueError("Could not open settings file."))
-
-        data = np.loadtxt(data_name)
-        self.__time = data[:-1,0]
-        self.__signal = data[:-1,1:]
-        self.__sampling=int(np.loadtxt(sampling_name))
+    def __init__(self, series, sampling, positions, settings):
+        self.__time = series[:,0]
+        self.__signal = series[:,1:]
+        self.__sampling = sampling
+        self.__positions = positions
+        self.__settings = settings
 
         self.__data_points = len(self.__time)
         self.__number_of_cells = len(self.__signal[0])
@@ -35,6 +30,8 @@ class Data(object):
 
         self.__binarized_slow = False
         self.__binarized_fast = False
+
+        self.__good_cells = False
 
 # -------------------------------- IMPORTERS --------------------------------- #
     def import_filtered_slow(self, path):
@@ -70,6 +67,8 @@ class Data(object):
     def get_settings(self): return self.__settings
     def get_time(self): return self.__time
     def get_signal(self): return self.__signal
+    def get_sampling(self): return self.__sampling
+    def get_positions(self): return self.__positions
     def get_data_points(self): return self.__data_points
     def get_number_of_cells(self): return self.__number_of_cells
     def get_filtered_slow(self): return self.__filtered_slow
@@ -77,6 +76,7 @@ class Data(object):
     def get_distributions(self): return self.__distributions
     def get_binarized_slow(self): return self.__binarized_slow
     def get_binarized_fast(self): return self.__binarized_fast
+    def get_good_cells(self): return self.__good_cells
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
 # ---------- Filter + smooth ---------- #
@@ -131,6 +131,8 @@ class Data(object):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
         self.__distributions = [dict() for i in range(self.__number_of_cells)]
+        self.__good_cells = []
+
         for cell in range(self.__number_of_cells):
             # Compute cumulative histogram and bins
             signal = np.clip(self.__filtered_fast[:,cell], 0, None)
@@ -166,10 +168,8 @@ class Data(object):
             score_threshold = self.__settings["exclude"]["score_threshold"]
             spikes_threshold = self.__settings["exclude"]["spikes_threshold"]
 
-            if score<score_threshold or np.exp(p(p_root))<spikes_threshold*self.__data_points:
-                exclude = True
-            else:
-                exclude = False
+            if score>score_threshold and np.exp(p(p_root))>spikes_threshold*self.__data_points:
+                self.__good_cells.append(cell)
 
             self.__distributions[cell]["hist"] = cumulative_hist
             self.__distributions[cell]["bins"] = x
@@ -177,7 +177,6 @@ class Data(object):
             self.__distributions[cell]["q"] = q
             self.__distributions[cell]["p_root"] = p_root
             self.__distributions[cell]["q_root"] = q_root
-            self.__distributions[cell]["exclude"] = exclude
             self.__distributions[cell]["score"] = score
 
     def plot_distributions(self, directory):
@@ -191,11 +190,10 @@ class Data(object):
             q = self.__distributions[cell]["q"]
             p_root = self.__distributions[cell]["p_root"]
             q_root = self.__distributions[cell]["q_root"]
-            exclude = self.__distributions[cell]["exclude"]
             score = self.__distributions[cell]["score"]
 
             fig, (ax1, ax2) = plt.subplots(2, 1)
-            if exclude:
+            if cell not in self.__good_cells:
                 ax1.set_facecolor('xkcd:salmon')
                 fig.suptitle("Score = {0:.2f} ({1})".format(score, "EXCLUDE"))
             else:
@@ -223,10 +221,11 @@ class Data(object):
             raise ValueError("No distribution or filtered data.")
         self.__binarized_fast = np.zeros((self.__data_points, self.__number_of_cells))
         for cell in range(self.__number_of_cells):
-            if self.__distributions[cell]["exclude"] is True:
+            if cell not in self.__good_cells:
                 pass
             threshold = self.__distributions[cell]["p_root"]
             self.__binarized_fast[:,cell] = np.where(self.__filtered_fast[:,cell]>threshold, 1, 0)
+            self.__binarized_fast = self.__binarized_fast.astype(int)
 
     def binarize_slow(self):
         if self.__filtered_slow is False:
@@ -255,14 +254,14 @@ class Data(object):
             # Erase values (from 0 to first extreme) and (last extreme to end)
             self.__binarized_slow[0:extremes[0],cell] = 0
             self.__binarized_slow[extremes[-1]:,cell] = 0
-            self.__binarized_slow.astype(int)
+            self.__binarized_slow = self.__binarized_slow.astype(int)
 
     def plot_binarized(self, directory):
         if self.__binarized_slow is False or self.__binarized_fast is False:
             raise ValueError("No filtered data!")
 
         for cell in range(self.__number_of_cells):
-            if self.__distributions[cell]["exclude"] is True:
+            if cell not in self.__good_cells:
                 continue
 
             fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
@@ -297,3 +296,23 @@ class Data(object):
             plt.close()
 
             print(cell)
+
+    def exclude_bad_cells(self):
+        if self.__good_cells is False:
+            raise ValueError("No good cells determined.")
+        self.__signal = self.__signal[:,self.__good_cells]
+        self.__positions = self.__positions[self.__good_cells]
+
+        self.__filtered_slow = self.__filtered_slow[:,self.__good_cells]
+        self.__filtered_fast = self.__filtered_fast[:,self.__good_cells]
+
+        excluded_distributions = []
+        for i in range(self.__number_of_cells):
+            if i in self.__good_cells:
+                excluded_distributions.append(self.__distributions[i])
+        self.__distributions = excluded_distributions
+
+        self.__number_of_cells = len(self.__good_cells)
+
+        self.__binarized_slow = self.__binarized_slow[:,self.__good_cells]
+        self.__binarized_fast = self.__binarized_fast[:,self.__good_cells]

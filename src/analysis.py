@@ -1,9 +1,26 @@
+import numpy as np
+import networkx as nx
+import matplotlib.pyplot as plt
+
 class Analysis(object):
     """docstring for Analysis."""
 
-    def __init__(self, data, network):
-        self.__number_of_cells = data.get_number_of_cells()
+    def __init__(self, data, networks):
+        self.__sampling = data.get_sampling()
         self.__data_points = data.get_data_points()
+        self.__number_of_cells = data.get_number_of_cells()
+
+        self.__filtered_slow = data.get_filtered_slow()
+        self.__filtered_fast = data.get_filtered_fast()
+
+        self.__distributions = data.get_distributions()
+
+        self.__binarized_slow = data.get_binarized_slow()
+        self.__binarized_fast = data.get_binarized_fast()
+
+        self.__positions = networks.get_positions()
+        self.__G_slow = networks.get_G_slow()
+        self.__G_fast = networks.get_G_fast()
 
 
     def compare_slow_fast(self):
@@ -38,13 +55,13 @@ class Analysis(object):
         data = np.array([densities[i] for i in range(1, len(densities))])
         norm_data = data/np.max(data)
 
-        # plt.plot(phi, bars, phi, norm_data)
-        # plt.show()
+        plt.plot(phi, bars, phi, norm_data)
+        plt.show()
 
-        # colors = plt.cm.seismic(norm_data)
-        # ax = plt.subplot(111, projection="polar")
-        # ax.bar(phi, norm_data, width=2*np.pi/12, bottom=0.0, color=colors)
-        # plt.show()
+        colors = plt.cm.seismic(norm_data)
+        ax = plt.subplot(111, projection="polar")
+        ax.bar(phi, norm_data, width=2*np.pi/12, bottom=0.0, color=colors)
+        plt.show()
 
         return (phi, bars, norm_data)
 
@@ -65,7 +82,22 @@ class Analysis(object):
 
         return (distances, correlations_slow, correlations_fast)
 
-    def dynamics_parameters(self):
+    def compute_topology_parameters(self):
+        if self.__G_slow is False or self.__G_fast is False:
+            raise ValueError("No built network.")
+        parameters = [dict() for i in range(self.__number_of_cells)]
+
+        for cell in range(self.__number_of_cells):
+            parameters[cell]["NDs"] = self.__G_slow.degree[cell]
+            parameters[cell]["NDf"] = self.__G_fast.degree[cell]
+            parameters[cell]["Cs"] = nx.clustering(self.__G_slow)[cell]
+            parameters[cell]["Cf"] = nx.clustering(self.__G_fast)[cell]
+            parameters[cell]["NNDs"] = nx.average_neighbor_degree(self.__G_slow)[cell]
+            parameters[cell]["NNDf"] = nx.average_neighbor_degree(self.__G_fast)[cell]
+
+        return parameters
+
+    def compute_dynamics_parameters(self):
         parameters = [dict() for i in range(self.__number_of_cells)]
 
         for cell in range(self.__number_of_cells):
