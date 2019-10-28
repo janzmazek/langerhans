@@ -23,9 +23,7 @@ class Data(object):
         data = np.loadtxt(data_name)
         self.__time = data[:-1,0]
         self.__signal = data[:-1,1:]
-        # self.__signal = np.loadtxt(data_name)
         self.__sampling=int(np.loadtxt(sampling_name))
-        # self.__time = np.arange(0,self.__signal.shape[0])*1/self.__sampling
 
         self.__data_points = len(self.__time)
         self.__number_of_cells = len(self.__signal[0])
@@ -143,7 +141,7 @@ class Data(object):
 
             # Fit polynomial of nth order
             order = self.__settings["distribution_order"]
-            z = np.polyfit(x, np.log(cumulative_hist), order)
+            z = np.polyfit(x, np.log(cumulative_hist), order, w=np.sqrt(cumulative_hist))
             p = np.poly1d(z)
 
             # Transitions of polynomial
