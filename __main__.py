@@ -13,18 +13,17 @@ def f(name):
     return os.path.join(abs, name)
 
 series_location = f("{0}/{1}/series{1}.dat".format(LOCATION, DATA))
-sampling_location = f("{0}/{1}/sampling{1}.dat".format(LOCATION, DATA))
 settings_location = f("{0}/{1}/settings.yaml".format(LOCATION, DATA))
 
 filtered_location = f("{0}/{1}/filtered".format(LOCATION, DATA))
 distributions_location = f("{0}/{1}/distributions".format(LOCATION, DATA))
 binarized_location = f("{0}/{1}/binarized".format(LOCATION, DATA))
+networks_location = f("{0}/{1}/networks".format(LOCATION, DATA))
 
 positions_location = f("{0}/{1}/positions{1}.dat".format(LOCATION, DATA))
 
 # ----------------------------------  OPEN  ---------------------------------- #
 series = np.loadtxt(series_location)[:-1,:]
-sampling = int(np.loadtxt(sampling_location))
 positions = np.loadtxt(positions_location)
 with open(settings_location, 'r') as stream:
     try:
@@ -34,9 +33,10 @@ with open(settings_location, 'r') as stream:
 
 # ----------------------------------  MAIN  ---------------------------------- #
 
-data = Data(series, sampling, positions, settings)
+data = Data(series, positions, settings)
 
 data.filter()
+# data.plot_filtered(filtered_location)
 data.compute_distributions()
 # data.plot_distributions(distributions_location)
 data.binarize_fast()
@@ -44,11 +44,7 @@ data.binarize_slow()
 # data.plot_binarized(binarized_location)
 data.exclude_bad_cells()
 
-networks = Networks(data)
-networks.build_network()
-networks.draw_network()
-# networks.draw_network()
-
-# analysis = Analysis(data, networks)
+analysis = Analysis(data)
+analysis.draw_networks(networks_location)
 # analysis.compare_slow_fast()
 # print(analysis.compare_correlation_distance())

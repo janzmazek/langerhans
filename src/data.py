@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 from scipy.signal import butter, sosfiltfilt, ricker, cwt, correlate, savgol_filter
 from scipy.optimize import curve_fit
+import scipy.fftpack
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -13,12 +14,14 @@ class Data(object):
     A class for signal analysis.
     """
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, series, sampling, positions, settings):
-        self.__time = series[:,0]
+    def __init__(self, series, positions, settings):
         self.__signal = series[:,1:]
-        self.__sampling = sampling
+        sampling = settings["sampling"]
+        self.__time = np.arange(len(self.__signal))*(1/sampling)
         self.__positions = positions
         self.__settings = settings
+
+        assert self.__positions.shape[0] == self.__signal.shape[1]
 
         self.__data_points = len(self.__time)
         self.__number_of_cells = len(self.__signal[0])
@@ -67,7 +70,6 @@ class Data(object):
     def get_settings(self): return self.__settings
     def get_time(self): return self.__time
     def get_signal(self): return self.__signal
-    def get_sampling(self): return self.__sampling
     def get_positions(self): return self.__positions
     def get_data_points(self): return self.__data_points
     def get_number_of_cells(self): return self.__number_of_cells
@@ -76,7 +78,6 @@ class Data(object):
     def get_distributions(self): return self.__distributions
     def get_binarized_slow(self): return self.__binarized_slow
     def get_binarized_fast(self): return self.__binarized_fast
-    def get_good_cells(self): return self.__good_cells
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
 # ---------- Filter + smooth ---------- #
@@ -90,7 +91,7 @@ class Data(object):
             self.__filtered_fast[:,i] = self.__bandpass(self.__signal[:,i], (*fast))
 
     def __bandpass(self, data, lowcut, highcut, order=5):
-        nyq = 0.5*self.__sampling
+        nyq = 0.5*self.__settings["sampling"]
         low = lowcut / nyq
         high = highcut / nyq
         sos = butter(order, [low, high], analog=False, btype='band', output='sos')
@@ -113,14 +114,13 @@ class Data(object):
             print(i)
             mean = np.mean(self.__signal[:,i])
 
-            plt.subplot(211)
-            plt.plot(self.__time,self.__signal[:,i]-mean,linewidth=0.5,color='dimgrey')
-            plt.plot(self.__time,self.__filtered_slow[:,i],linewidth=2,color='blue')
+            fig, (ax1, ax2) = plt.subplots(2)
+            ax1.plot(self.__time, self.__signal[:,i]-mean, linewidth=0.5, color='dimgrey')
+            ax1.plot(self.__time, self.__filtered_slow[:,i], linewidth=2, color='blue')
 
-            plt.subplot(212)
-            plt.plot(self.__time,self.__signal[:,i]-mean,linewidth=0.5,color='dimgrey')
-            plt.plot(self.__time,self.__filtered_fast[:,i],linewidth=0.5,color='red')
-            plt.xlim(self.__settings["filter"]["image"])
+            ax2.plot(self.__time, self.__signal[:,i]-mean, linewidth=0.5, color='dimgrey')
+            ax2.plot(self.__time, self.__filtered_fast[:,i], linewidth=0.5, color='red')
+            ax2.set_xlim(self.__settings["filter"]["plot"])
 
             plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
             plt.close()
@@ -183,6 +183,7 @@ class Data(object):
         if self.__distributions is False:
             raise ValueError("No distribution data.")
         for cell in range(self.__number_of_cells):
+            print(cell)
 
             hist = self.__distributions[cell]["hist"]
             x = self.__distributions[cell]["bins"]
@@ -316,3 +317,15 @@ class Data(object):
 
         self.__binarized_slow = self.__binarized_slow[:,self.__good_cells]
         self.__binarized_fast = self.__binarized_fast[:,self.__good_cells]
+
+    def is_analyzed(self):
+        if self.__filtered_slow is False or self.__filtered_fast is False:
+            return False
+        elif self.__distributions is False:
+            return False
+        elif self.__binarized_slow is False or self.__binarized_fast is False:
+            return False
+        elif self.__good_cells is False:
+            return False
+        else:
+            return True
