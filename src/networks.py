@@ -7,9 +7,9 @@ class Networks(object):
     """docstring for Networks."""
 
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, settings, number_of_cells, filtered_slow, filtered_fast):
+    def __init__(self, settings, cells, filtered_slow, filtered_fast):
         self.__settings = settings
-        self.__number_of_cells = number_of_cells
+        self.__cells = cells
         self.__filtered_slow = filtered_slow
         self.__filtered_fast = filtered_fast
 
@@ -46,18 +46,18 @@ class Networks(object):
         return average_degree-self.__settings["network"]["average_degree"]
 
     def __construct_network(self, filtered, threshold):
-        correlation_matrix = np.eye(self.__number_of_cells)
+        correlation_matrix = np.eye(self.__cells)
 
         # Construct correlation matrix from filtered signal
-        for i in range(self.__number_of_cells):
+        for i in range(self.__cells):
             for j in range(i):
                 correlation = np.corrcoef(filtered[:,i], filtered[:,j])[0,1]
                 correlation_matrix[i,j] = correlation
                 correlation_matrix[j,i] = correlation
 
         # Construct adjacency matrix from correlation matrix and threshold
-        A = np.zeros((self.__number_of_cells, self.__number_of_cells))
-        for i in range(self.__number_of_cells):
+        A = np.zeros((self.__cells, self.__cells))
+        for i in range(self.__cells):
             for j in range(i):
                 if correlation_matrix[i,j]>threshold:
                     A[i,j] = 1
@@ -66,16 +66,16 @@ class Networks(object):
         return nx.from_numpy_matrix(A)
 
     def node_degree(self, slice, cell):
-        return self.__G_slow[slice].degree(cell),
-               self.__G_fast[slice].degree(cell)
+        return (self.__G_slow[slice].degree(cell),
+                self.__G_fast[slice].degree(cell))
 
     def clustering(self, slice, cell):
-        return nx.clustering(self.__G_slow[slice])[cell],
-               nx.clustering(self.__G_fast[slice])[cell]
+        return (nx.clustering(self.__G_slow[slice])[cell],
+                nx.clustering(self.__G_fast[slice])[cell])
 
     def nearest_neighbour_degree(self, slice, cell):
-        return nx.average_neighbor_degree(self.__G_slow[slice])[cell],
-               nx.average_neighbor_degree(self.__G_fast[slice])[cell]
+        return (nx.average_neighbor_degree(self.__G_slow[slice])[cell],
+                nx.average_neighbor_degree(self.__G_fast[slice])[cell])
 
     def draw_networks(self, positions, directory):
         slices = len(self.__G_slow)

@@ -46,5 +46,6 @@ data.exclude_bad_cells()
 
 analysis = Analysis(data)
 analysis.draw_networks(networks_location)
-# analysis.compare_slow_fast()
+analysis.print_parameters()
+print(analysis.compare_slow_fast())
 # print(analysis.compare_correlation_distance())

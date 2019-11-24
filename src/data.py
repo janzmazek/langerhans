@@ -23,8 +23,8 @@ class Data(object):
 
         assert self.__positions.shape[0] == self.__signal.shape[1]
 
-        self.__data_points = len(self.__time)
-        self.__number_of_cells = len(self.__signal[0])
+        self.__points = len(self.__time)
+        self.__cells = len(self.__signal[0])
 
         self.__filtered_slow = False
         self.__filtered_fast = False
@@ -71,8 +71,8 @@ class Data(object):
     def get_time(self): return self.__time
     def get_signal(self): return self.__signal
     def get_positions(self): return self.__positions
-    def get_data_points(self): return self.__data_points
-    def get_number_of_cells(self): return self.__number_of_cells
+    def get_points(self): return self.__points
+    def get_cells(self): return self.__cells
     def get_filtered_slow(self): return self.__filtered_slow
     def get_filtered_fast(self): return self.__filtered_fast
     def get_distributions(self): return self.__distributions
@@ -83,10 +83,10 @@ class Data(object):
 # ---------- Filter + smooth ---------- #
     def filter(self):
         slow, fast = self.__settings["filter"]["slow"], self.__settings["filter"]["fast"]
-        self.__filtered_slow = np.zeros((self.__data_points, self.__number_of_cells))
-        self.__filtered_fast = np.zeros((self.__data_points, self.__number_of_cells))
+        self.__filtered_slow = np.zeros((self.__points, self.__cells))
+        self.__filtered_fast = np.zeros((self.__points, self.__cells))
 
-        for i in range(self.__number_of_cells):
+        for i in range(self.__cells):
             self.__filtered_slow[:,i] = self.__bandpass(self.__signal[:,i], (*slow))
             self.__filtered_fast[:,i] = self.__bandpass(self.__signal[:,i], (*fast))
 
@@ -103,14 +103,14 @@ class Data(object):
         order = self.__settings["smooth"]["order"]
         if self.__filtered_fast is False:
             raise ValueError("No filtered data")
-        self.__smoothed_fast = np.zeros((self.__data_points, self.__number_of_cells))
-        for i in range(self.__number_of_cells):
+        self.__smoothed_fast = np.zeros((self.__points, self.__cells))
+        for i in range(self.__cells):
             self.__filtered_fast[:,i] = savgol_filter(self.__filtered_fast[:,i], points, order)
 
     def plot_filtered(self, directory):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             raise ValueError("No filtered data!")
-        for i in range(self.__number_of_cells):
+        for i in range(self.__cells):
             print(i)
             mean = np.mean(self.__signal[:,i])
 
@@ -130,10 +130,10 @@ class Data(object):
     def compute_distributions(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
-        self.__distributions = [dict() for i in range(self.__number_of_cells)]
+        self.__distributions = [dict() for i in range(self.__cells)]
         self.__good_cells = []
 
-        for cell in range(self.__number_of_cells):
+        for cell in range(self.__cells):
             # Compute cumulative histogram and bins
             signal = np.clip(self.__filtered_fast[:,cell], 0, None)
             hist = np.histogram(signal, 50)
@@ -168,7 +168,7 @@ class Data(object):
             score_threshold = self.__settings["exclude"]["score_threshold"]
             spikes_threshold = self.__settings["exclude"]["spikes_threshold"]
 
-            if score>score_threshold and np.exp(p(p_root))>spikes_threshold*self.__data_points:
+            if score>score_threshold and np.exp(p(p_root))>spikes_threshold*self.__points:
                 self.__good_cells.append(cell)
 
             self.__distributions[cell]["hist"] = cumulative_hist
@@ -182,7 +182,7 @@ class Data(object):
     def plot_distributions(self, directory):
         if self.__distributions is False:
             raise ValueError("No distribution data.")
-        for cell in range(self.__number_of_cells):
+        for cell in range(self.__cells):
             print(cell)
 
             hist = self.__distributions[cell]["hist"]
@@ -220,8 +220,8 @@ class Data(object):
     def binarize_fast(self):
         if self.__distributions is False or self.__filtered_fast is False:
             raise ValueError("No distribution or filtered data.")
-        self.__binarized_fast = np.zeros((self.__data_points, self.__number_of_cells))
-        for cell in range(self.__number_of_cells):
+        self.__binarized_fast = np.zeros((self.__points, self.__cells))
+        for cell in range(self.__cells):
             if cell not in self.__good_cells:
                 pass
             threshold = self.__distributions[cell]["p_root"]
@@ -231,12 +231,12 @@ class Data(object):
     def binarize_slow(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
-        self.__binarized_slow = np.zeros((self.__data_points, self.__number_of_cells))
-        for cell in range(self.__number_of_cells):
+        self.__binarized_slow = np.zeros((self.__points, self.__cells))
+        for cell in range(self.__cells):
             signal = self.__filtered_slow[:,cell]
             self.__binarized_slow[:,cell] = np.heaviside(np.gradient(signal), 0)
             extremes = []
-            for i in range(1, self.__data_points):
+            for i in range(1, self.__points):
                 if self.__binarized_slow[i,cell]!=self.__binarized_slow[i-1,cell]:
                     extremes.append(i)
 
@@ -261,7 +261,7 @@ class Data(object):
         if self.__binarized_slow is False or self.__binarized_fast is False:
             raise ValueError("No filtered data!")
 
-        for cell in range(self.__number_of_cells):
+        for cell in range(self.__cells):
             if cell not in self.__good_cells:
                 continue
 
@@ -308,12 +308,12 @@ class Data(object):
         self.__filtered_fast = self.__filtered_fast[:,self.__good_cells]
 
         excluded_distributions = []
-        for i in range(self.__number_of_cells):
+        for i in range(self.__cells):
             if i in self.__good_cells:
                 excluded_distributions.append(self.__distributions[i])
         self.__distributions = excluded_distributions
 
-        self.__number_of_cells = len(self.__good_cells)
+        self.__cells = len(self.__good_cells)
 
         self.__binarized_slow = self.__binarized_slow[:,self.__good_cells]
         self.__binarized_fast = self.__binarized_fast[:,self.__good_cells]
