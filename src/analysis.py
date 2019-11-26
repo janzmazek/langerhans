@@ -40,7 +40,42 @@ class Analysis(object):
 
 # --------------------------------- GETTERS ---------------------------------- #
 
+
+# ---------------------------- ANALYSIS FUNCTIONS ---------------------------- #
+    def __search_sequence(self, arr, seq):
+        """ Find sequence in an array using NumPy only.
+
+        Parameters
+        ----------
+        arr    : input 1D array
+        seq    : input 1D array
+
+        Output
+        ------
+        Output : 1D Array of indices in the input array that satisfy the
+        matching of input sequence in the input array.
+        In case of no match, an empty list is returned.
+        """
+        # Store sizes of input array and sequence
+        seq = np.array(seq)
+        Na, Nseq = arr.size, seq.size
+
+        # Range of sequence
+        r_seq = np.arange(Nseq)
+
+        # Create a 2D array of sliding indices across the entire length of input array.
+        # Match up with the input sequence & get the matching starting indices.
+        M = (arr[np.arange(Na-Nseq+1)[:,None] + r_seq] == seq).all(1)
+
+        # Get the range of those indices as final output
+        if M.any() > 0:
+            return np.where(M == True)[0]
+        else:
+            return np.array([], dtype="int") # No match found
+
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
+    def draw_networks(self, location):
+        self.__networks.draw_networks(self.__positions, location)
 
     def print_parameters(self):
         print("Network parameters:")
@@ -67,68 +102,68 @@ class Analysis(object):
             for cell in range(self.__cells):
                 par[slice][cell]["active_time"] = self.__active_time(slice, cell)
                 par[slice][cell]["frequency"] = self.__frequency(slice, cell)
-                par[slice][cell]["interspike_interval"] = self.__interspike_interval(slice, cell)
+                par[slice][cell]["interspike_variation"] = self.__interspike_variation(slice, cell)
 
         return par
 
     def __active_time(self, slice, cell):
         bin = self.__binarized_fast[slice][:,cell]
-        return np.sum(bin)/len(bin)
+        return np.sum(bin)/bin.size
 
     def __frequency(self, slice, cell):
         bin_slow = self.__binarized_slow[slice][:,cell]
         bin_fast = self.__binarized_fast[slice][:,cell]
 
-        peaks = bin_slow == 12
-        slow = np.sum(peaks[:-1] != peaks[1:])/2/len(peaks)*self.__sampling
-        fast = np.sum(bin_fast[:-1] != bin_fast[1:])/2/len(bin_fast)*self.__sampling
-        return (slow, fast)
+        frequency_slow = self.__search_sequence(bin_slow, [11,12]).size
+        frequency_slow = frequency_slow/len(bin_slow)*self.__sampling
+        frequency_fast = self.__search_sequence(bin_fast, [0,1]).size
+        frequency_fast = frequency_fast/len(bin_fast)*self.__sampling
 
-    def __spike_borders(self, slice, cell):
-        bin = self.__binarized_fast[slice][:,cell]
-        spike_borders = np.where(bin[:-1] != bin[1:])[0]
-        if len(spike_borders) == 0: # no spikes in this slice
-            return None
-        if bin[spike_borders[0]] == 1: # slice starts with spike
-            spike_borders = spike_borders[1:] # remove initial spike
-        if len(spike_borders)%2 != 0: # slice end with spike
-            spike_borders = spike_borders[:-1] # remove final spike
-        if len(spike_borders) == 0: # only initial and final spikes were in this slice
-            return None
-        else:
-            return np.append(0, spike_borders, len(bin))
+        return (frequency_slow, frequency_fast)
 
-    def __interspike_interval(self, slice, cell):
-        spike_borders = self.__spike_borders(slice, cell)
-        if spike_borders is None:
+    def __interspike_variation(self, slice, cell):
+        bin_fast = self.__binarized_fast[slice][:,cell]
+
+        interspike_start = self.__search_sequence(bin_fast, [1,0])
+        interspike_end = self.__search_sequence(bin_fast, [0,1])
+
+        if interspike_start.size == 0 or interspike_end.size == 0:
             return None
-        interspike_lengths = spike_borders[1::2]-spike_borders[:-1:2]
+        # First interspike_start must be before first interspike_end
+        if interspike_end[-1] < interspike_start[-1]:
+            interspike_start = interspike_start[:-1]
+        if interspike_start.size == 0:
+            return None
+        # Last interspike_start must be before last interspike_end
+        if interspike_end[0] < interspike_start[0]:
+            interspike_end = interspike_end[1:]
+
+        assert interspike_start.size == interspike_end.size
+
+        interspike_lengths = [interspike_end[i+1]-interspike_start[i] for i in range(len(interspike_start)-1)]
         mean_interspike_interval = np.mean(interspike_lengths)
         interspike_variation = np.std(interspike_lengths)/mean_interspike_interval
 
         return (mean_interspike_interval, interspike_variation)
 
-    def draw_networks(self, location):
-        self.__networks.draw_networks(self.__positions, location)
-
-    def compare_slow_fast(self, draw=True):
+    def compare_slow_fast(self, plot=True):
         phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
         spikes = np.zeros(12)
         for phase in range(1,13):
             for slice in range(self.__slices):
                 for cell in range(self.__cells):
-                    isolated_phase = self.__binarized_slow[slice][:,cell] == phase
-                    spike_borders = self.__spike_borders(slice, cell)
-                    if spike_borders is None:
-                        continue
-                    spike_indices = spike_borders[1::2]
-                    unitized_spikes = np.zeros(len(isolated_phase))
-                    unitized_spikes[spike_indices] = 1
-                    isolated_spikes = np.logical_and(isolated_phase, unitized_spikes)
+                    slow_isolated = self.__binarized_slow[slice][:,cell] == phase
 
-                    spikes[phase-1] += np.sum(isolated_spikes)
+                    bin_fast = self.__binarized_fast[slice][:,cell]
+                    spike_indices = self.__search_sequence(bin_fast, [0,1]) + 1
+                    fast_unitized = np.zeros(len(bin_fast))
+                    fast_unitized[spike_indices] = 1
 
-        if draw:
+                    fast_isolated_unitized = np.logical_and(slow_isolated, fast_unitized)
+
+                    spikes[phase-1] += np.sum(fast_isolated_unitized)
+
+        if plot:
             norm_spikes = spikes/np.max(spikes)
             colors = plt.cm.seismic(norm_spikes)
             ax = plt.subplot(111, projection="polar")
@@ -138,62 +173,30 @@ class Analysis(object):
         return (phases, spikes)
 
 
+    def compare_correlation_distance(self, plot=True):
+        distances = []
+        correlations_slow = [[] for s in range(self.__slices)]
+        correlations_fast = [[] for s in range(self.__slices)]
+        for cell1 in range(self.__cells):
+            for cell2 in range(cell1):
+                x1, y1 = self.__positions[cell1,0], self.__positions[cell1,1]
+                x2, y2 = self.__positions[cell2,0], self.__positions[cell2,1]
+                distance = np.sqrt((x1-x2)**2 + (y1-y2)**2)
+                distances.append(distance)
 
-    # def compare_slow_fast(self):
-    #     properties = {i:{"spikes": 0, "lengths": 0} for i in range(13)}
-    #
-    #     for cell in range(self.__cells):
-    #         start = 0
-    #         end = 0
-    #
-    #         for i in range(self.__points-1):
-    #             if self.__binarized_slow[i,cell] != self.__binarized_slow[i+1,cell]:
-    #                 end = i+1
-    #
-    #                 angle_index = self.__binarized_slow[i,cell]
-    #                 fast_interval = self.__binarized_fast[start:end,cell]
-    #
-    #                 bincnt = np.bincount(fast_interval)
-    #                 number_of_spikes = 0 if len(bincnt)==1 else bincnt[1]
-    #
-    #                 properties[angle_index]["spikes"] += number_of_spikes
-    #                 properties[angle_index]["lengths"] += end-start
-    #
-    #                 start = end
-    #
-    #     densities = {i: properties[i]["spikes"]/properties[i]["lengths"] for i in range(13)}
-    #
-    #
-    #     x0 = (np.pi/3 - np.pi/6)/2
-    #     d = np.pi/6
-    #     phi = [x0+d*i for i in range(12)]
-    #     bars = np.array([(-np.cos(i)+1)/2 for i in phi])
-    #     data = np.array([densities[i] for i in range(1, len(densities))])
-    #     norm_data = data/np.max(data)
-    #
-    #     plt.plot(phi, bars, phi, norm_data)
-    #     plt.show()
-    #
-    #     colors = plt.cm.seismic(norm_data)
-    #     ax = plt.subplot(111, projection="polar")
-    #     ax.bar(phi, norm_data, width=2*np.pi/12, bottom=0.0, color=colors)
-    #     plt.show()
-    #
-    #     return (phi, bars, norm_data)
-    #
-    # def compare_correlation_distance(self):
-    #     distances = []
-    #     correlations_slow = []
-    #     correlations_fast = []
-    #     for c1 in range(self.__cells):
-    #         for c2 in range(c1):
-    #             x1, y1 = self.__positions[c1,0], self.__positions[c1,1]
-    #             x2, y2 = self.__positions[c2,0], self.__positions[c2,1]
-    #             distance = np.sqrt((x1-x2)**2 + (y1-y2)**2)
-    #             correlation_slow = np.corrcoef(self.__filtered_slow[:,c1], self.__filtered_slow[:,c2])[0,1]
-    #             correlation_fast = np.corrcoef(self.__filtered_fast[:,c1], self.__filtered_fast[:,c2])[0,1]
-    #             distances.append(distance)
-    #             correlations_slow.append(correlation_slow)
-    #             correlations_fast.append(correlation_fast)
-    #
-    #     return (distances, correlations_slow, correlations_fast)
+                for slice in range(self.__slices):
+                    corr_slow = np.corrcoef(self.__filtered_slow[slice][:,cell1],
+                                            self.__filtered_slow[slice][:,cell2])[0,1]
+                    corr_fast = np.corrcoef(self.__filtered_fast[slice][:,cell1],
+                                            self.__filtered_fast[slice][:,cell2])[0,1]
+                    correlations_slow[slice].append(corr_slow)
+                    correlations_fast[slice].append(corr_fast)
+
+        if plot:
+            fig, ax = plt.subplots(self.__slices)
+            for slice in range(self.__slices):
+                ax[slice].scatter(distances, correlations_slow[slice])
+                ax[slice].scatter(distances, correlations_fast[slice])
+            plt.show()
+
+        return (distances, correlations_slow, correlations_fast)
