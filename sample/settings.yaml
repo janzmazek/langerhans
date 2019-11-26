@@ -1,0 +1,25 @@
+sampling: 10
+filter:
+  slow:
+    - 0.001
+    - 0.005
+  fast:
+    - 0.04
+    - 0.4
+  image:
+    - 250
+    - 1750
+smooth:
+  points: 51
+  order: 5
+distribution_order: 5
+exclude:
+  score_threshold: 1.5
+  spikes_threshold: 0.01
+analysis:
+  interval:
+    - 600
+    - 2900
+network:
+  average_degree: 7
+  slices: 1
