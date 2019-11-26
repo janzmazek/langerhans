@@ -42,7 +42,6 @@ class Networks(object):
     def __f(self, filtered, threshold):
         G = self.__construct_network(filtered, threshold)
         average_degree = np.mean([G.degree[i] for i in G])
-        print(average_degree)
         return average_degree-self.__settings["network"]["average_degree"]
 
     def __construct_network(self, filtered, threshold):

@@ -26,6 +26,7 @@ class Analysis(object):
         filtered_slow = data.get_filtered_slow().T[start:stop]
         filtered_slow = np.array(np.array_split(filtered_slow, self.__slices))
         self.__filtered_slow = np.transpose(filtered_slow, (0,2,1))
+
         filtered_fast = data.get_filtered_fast().T[start:stop]
         filtered_fast = np.array(np.array_split(filtered_fast, self.__slices))
         self.__filtered_fast = np.transpose(filtered_fast, (0,2,1))
@@ -44,27 +45,13 @@ class Analysis(object):
         self.__networks.build_networks()
 
         # Compute network and dynamics parameters
-        self.__network_parameters = self.__compute_network_parameters()
-        self.__dynamics_parameters = self.__compute_dynamics_parameters()
+        self.__parameters = self.__compute_parameters()
 
 # --------------------------------- GETTERS ---------------------------------- #
 
 
 # ---------------------------- ANALYSIS FUNCTIONS ---------------------------- #
     def __search_sequence(self, arr, seq):
-        """ Find sequence in an array using NumPy only.
-
-        Parameters
-        ----------
-        arr    : input 1D array
-        seq    : input 1D array
-
-        Output
-        ------
-        Output : 1D Array of indices in the input array that satisfy the
-        matching of input sequence in the input array.
-        In case of no match, an empty list is returned.
-        """
         # Store sizes of input array and sequence
         seq = np.array(seq)
         Na, Nseq = arr.size, seq.size
@@ -86,32 +73,24 @@ class Analysis(object):
     def draw_networks(self, location):
         self.__networks.draw_networks(self.__positions, location)
 
-    def print_parameters(self):
-        print("Network parameters:")
-        print(self.__network_parameters)
-        print("Dynamics parameters:")
-        print(self.__dynamics_parameters)
-
-    def __compute_network_parameters(self):
+    def __compute_parameters(self):
         G_slow = self.__networks.get_G_slow()
         G_fast = self.__networks.get_G_fast()
 
         par = [[dict() for c in range(self.__cells)] for s in range(self.__slices)]
         for slice in range(self.__slices):
             for cell in range(self.__cells):
-                par[slice][cell]["ND"] = self.__networks.node_degree(slice, cell)
-                par[slice][cell]["C"] = self.__networks.clustering(slice, cell)
-                par[slice][cell]["NND"] = self.__networks.nearest_neighbour_degree(slice, cell)
-
-        return par
-
-    def __compute_dynamics_parameters(self):
-        par = [[dict() for c in range(self.__cells)] for s in range(self.__slices)]
-        for slice in range(self.__slices):
-            for cell in range(self.__cells):
-                par[slice][cell]["active_time"] = self.__active_time(slice, cell)
-                par[slice][cell]["frequency"] = self.__frequency(slice, cell)
-                par[slice][cell]["interspike_variation"] = self.__interspike_variation(slice, cell)
+                par[slice][cell]["NDs"] = self.__networks.node_degree(slice, cell)[0]
+                par[slice][cell]["NDf"] = self.__networks.node_degree(slice, cell)[1]
+                par[slice][cell]["Cs"] = self.__networks.clustering(slice, cell)[0]
+                par[slice][cell]["Cf"] = self.__networks.clustering(slice, cell)[1]
+                par[slice][cell]["NNDs"] = self.__networks.nearest_neighbour_degree(slice, cell)[0]
+                par[slice][cell]["NNDf"] = self.__networks.nearest_neighbour_degree(slice, cell)[1]
+                par[slice][cell]["AT"] = self.__active_time(slice, cell)
+                par[slice][cell]["Fs"] = self.__frequency(slice, cell)[0]
+                par[slice][cell]["Ff"] = self.__frequency(slice, cell)[1]
+                par[slice][cell]["ISI"] = self.__interspike_variation(slice, cell)[0]
+                par[slice][cell]["ISIV"] = self.__interspike_variation(slice, cell)[1]
 
         return par
 
@@ -137,23 +116,51 @@ class Analysis(object):
         interspike_end = self.__search_sequence(bin_fast, [0,1])
 
         if interspike_start.size == 0 or interspike_end.size == 0:
-            return None
+            return (None, None)
         # First interspike_start must be before first interspike_end
         if interspike_end[-1] < interspike_start[-1]:
             interspike_start = interspike_start[:-1]
         if interspike_start.size == 0:
-            return None
+            return (None, None)
         # Last interspike_start must be before last interspike_end
         if interspike_end[0] < interspike_start[0]:
             interspike_end = interspike_end[1:]
 
         assert interspike_start.size == interspike_end.size
 
-        interspike_lengths = [interspike_end[i+1]-interspike_start[i] for i in range(len(interspike_start)-1)]
+        interspike_lengths = [interspike_end[i]-interspike_start[i] for i in range(interspike_start.size)]
         mean_interspike_interval = np.mean(interspike_lengths)
         interspike_variation = np.std(interspike_lengths)/mean_interspike_interval
 
         return (mean_interspike_interval, interspike_variation)
+
+    def plot_analysis(self, directory):
+        for slice in range(self.__slices):
+            pars = ("NDs", "NDf", "Cs", "Cf", "NNDs", "NNDf", "AT", "Fs", "Ff", "ISI", "ISIV")
+
+            fig, ax = plt.subplots(len(pars), len(pars), figsize=(75, 75))
+            for p1 in range(len(pars)):
+                for p2 in range(p1+1):
+                    x = np.array([self.__parameters[slice][c][pars[p1]] for c in range(self.__cells)])
+                    y = np.array([self.__parameters[slice][c][pars[p2]] for c in range(self.__cells)])
+
+                    both_not_None = np.logical_and(x != None, y != None)
+                    x = x[both_not_None].astype(float)
+                    y = y[both_not_None].astype(float)
+
+                    correlation = np.corrcoef(x, y)[0,1]
+
+                    ax[p1,p2].scatter(x, y)
+                    ax[p1,p2].set_title("Correlation: {0}".format(correlation))
+                    ax[p1,p2].set_xlabel(pars[p1])
+                    ax[p1,p2].set_ylabel(pars[p2])
+
+                    ax[p2,p1].scatter(y, x)
+                    ax[p2,p1].set_title("Correlation: {0}".format(correlation))
+                    ax[p2,p1].set_xlabel(pars[p2])
+                    ax[p2,p1].set_ylabel(pars[p1])
+            plt.savefig("{0}/{1}.pdf".format(directory, slice), dpi=200, bbox_inches='tight')
+            plt.close()
 
     def compare_slow_fast(self, plot=True):
         phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
@@ -180,7 +187,6 @@ class Analysis(object):
             plt.show()
 
         return (phases, spikes)
-
 
     def compare_correlation_distance(self, plot=True):
         distances = []
