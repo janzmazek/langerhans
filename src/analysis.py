@@ -23,12 +23,21 @@ class Analysis(object):
         self.__positions = data.get_positions()
 
         # Split filtered data into slices
-        self.__filtered_slow = np.array_split(data.get_filtered_slow()[start:stop], self.__slices)
-        self.__filtered_fast = np.array_split(data.get_filtered_fast()[start:stop], self.__slices)
+        filtered_slow = data.get_filtered_slow().T[start:stop]
+        filtered_slow = np.array(np.array_split(filtered_slow, self.__slices))
+        self.__filtered_slow = np.transpose(filtered_slow, (0,2,1))
+        filtered_fast = data.get_filtered_fast().T[start:stop]
+        filtered_fast = np.array(np.array_split(filtered_fast, self.__slices))
+        self.__filtered_fast = np.transpose(filtered_fast, (0,2,1))
 
         # Split binarized data into slices
-        self.__binarized_slow = np.array_split(data.get_binarized_slow()[start:stop], self.__slices)
-        self.__binarized_fast = np.array_split(data.get_binarized_fast()[start:stop], self.__slices)
+        binarized_slow = data.get_binarized_slow().T[start:stop]
+        binarized_slow = np.array(np.array_split(binarized_slow, self.__slices))
+        self.__binarized_slow = np.transpose(binarized_slow, (0,2,1))
+
+        binarized_fast = data.get_binarized_fast().T[start:stop]
+        binarized_fast = np.array(np.array_split(binarized_fast, self.__slices))
+        self.__binarized_fast = np.transpose(binarized_fast, (0,2,1))
 
         # Construct networks and build networks from sliced data
         self.__networks = Networks(settings, self.__cells, self.__filtered_slow, self.__filtered_fast)
@@ -107,12 +116,12 @@ class Analysis(object):
         return par
 
     def __active_time(self, slice, cell):
-        bin = self.__binarized_fast[slice][:,cell]
+        bin = self.__binarized_fast[slice][cell]
         return np.sum(bin)/bin.size
 
     def __frequency(self, slice, cell):
-        bin_slow = self.__binarized_slow[slice][:,cell]
-        bin_fast = self.__binarized_fast[slice][:,cell]
+        bin_slow = self.__binarized_slow[slice][cell]
+        bin_fast = self.__binarized_fast[slice][cell]
 
         frequency_slow = self.__search_sequence(bin_slow, [11,12]).size
         frequency_slow = frequency_slow/len(bin_slow)*self.__sampling
@@ -122,7 +131,7 @@ class Analysis(object):
         return (frequency_slow, frequency_fast)
 
     def __interspike_variation(self, slice, cell):
-        bin_fast = self.__binarized_fast[slice][:,cell]
+        bin_fast = self.__binarized_fast[slice][cell]
 
         interspike_start = self.__search_sequence(bin_fast, [1,0])
         interspike_end = self.__search_sequence(bin_fast, [0,1])
@@ -152,9 +161,9 @@ class Analysis(object):
         for phase in range(1,13):
             for slice in range(self.__slices):
                 for cell in range(self.__cells):
-                    slow_isolated = self.__binarized_slow[slice][:,cell] == phase
+                    slow_isolated = self.__binarized_slow[slice][cell] == phase
 
-                    bin_fast = self.__binarized_fast[slice][:,cell]
+                    bin_fast = self.__binarized_fast[slice][cell]
                     spike_indices = self.__search_sequence(bin_fast, [0,1]) + 1
                     fast_unitized = np.zeros(len(bin_fast))
                     fast_unitized[spike_indices] = 1
@@ -185,10 +194,10 @@ class Analysis(object):
                 distances.append(distance)
 
                 for slice in range(self.__slices):
-                    corr_slow = np.corrcoef(self.__filtered_slow[slice][:,cell1],
-                                            self.__filtered_slow[slice][:,cell2])[0,1]
-                    corr_fast = np.corrcoef(self.__filtered_fast[slice][:,cell1],
-                                            self.__filtered_fast[slice][:,cell2])[0,1]
+                    corr_slow = np.corrcoef(self.__filtered_slow[slice][cell1],
+                                            self.__filtered_slow[slice][cell2])[0,1]
+                    corr_fast = np.corrcoef(self.__filtered_fast[slice][cell1],
+                                            self.__filtered_fast[slice][cell2])[0,1]
                     correlations_slow[slice].append(corr_slow)
                     correlations_fast[slice].append(corr_fast)
 

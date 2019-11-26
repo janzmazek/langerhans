@@ -26,16 +26,16 @@ class Networks(object):
     def build_networks(self):
         self.__G_slow = []
         # Calculate threshold and construct network for each slice
-        for interval in self.__filtered_slow:
-            slow_threshold = bisect(lambda x: self.__f(interval, x), 0, 1, xtol=0.01)
-            G_slow = self.__construct_network(interval, slow_threshold)
+        for slice in self.__filtered_slow:
+            slow_threshold = bisect(lambda x: self.__f(slice, x), 0, 1, xtol=0.01)
+            G_slow = self.__construct_network(slice, slow_threshold)
             self.__G_slow.append(G_slow)
 
         self.__G_fast = []
         # Calculate threshold and construct network for each slice
-        for interval in self.__filtered_fast:
-            fast_threshold = bisect(lambda x: self.__f(interval, x), 0, 1, xtol=0.01)
-            G_fast = self.__construct_network(interval, fast_threshold)
+        for slice in self.__filtered_fast:
+            fast_threshold = bisect(lambda x: self.__f(slice, x), 0, 1, xtol=0.01)
+            G_fast = self.__construct_network(slice, fast_threshold)
             self.__G_fast.append(G_fast)
 
     # Threshold is found by calculating root of this function
@@ -51,7 +51,7 @@ class Networks(object):
         # Construct correlation matrix from filtered signal
         for i in range(self.__cells):
             for j in range(i):
-                correlation = np.corrcoef(filtered[:,i], filtered[:,j])[0,1]
+                correlation = np.corrcoef(filtered[i], filtered[j])[0,1]
                 correlation_matrix[i,j] = correlation
                 correlation_matrix[j,i] = correlation
 

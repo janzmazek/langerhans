@@ -15,16 +15,16 @@ class Data(object):
     """
 # ------------------------------- INITIALIZER -------------------------------- #
     def __init__(self, series, positions, settings):
-        self.__signal = series[:,1:]
+        self.__signal = series[:,1:].transpose()
         sampling = settings["sampling"]
-        self.__time = np.arange(len(self.__signal))*(1/sampling)
+        self.__time = np.arange(len(self.__signal[0]))*(1/sampling)
         self.__positions = positions
         self.__settings = settings
 
-        assert self.__positions.shape[0] == self.__signal.shape[1]
+        assert self.__positions.shape[0] == self.__signal.shape[0]
 
         self.__points = len(self.__time)
-        self.__cells = len(self.__signal[0])
+        self.__cells = len(self.__signal)
 
         self.__filtered_slow = False
         self.__filtered_fast = False
@@ -83,12 +83,12 @@ class Data(object):
 # ---------- Filter + smooth ---------- #
     def filter(self):
         slow, fast = self.__settings["filter"]["slow"], self.__settings["filter"]["fast"]
-        self.__filtered_slow = np.zeros((self.__points, self.__cells))
-        self.__filtered_fast = np.zeros((self.__points, self.__cells))
+        self.__filtered_slow = np.zeros((self.__cells, self.__points))
+        self.__filtered_fast = np.zeros((self.__cells, self.__points))
 
         for i in range(self.__cells):
-            self.__filtered_slow[:,i] = self.__bandpass(self.__signal[:,i], (*slow))
-            self.__filtered_fast[:,i] = self.__bandpass(self.__signal[:,i], (*fast))
+            self.__filtered_slow[i] = self.__bandpass(self.__signal[i], (*slow))
+            self.__filtered_fast[i] = self.__bandpass(self.__signal[i], (*fast))
 
     def __bandpass(self, data, lowcut, highcut, order=5):
         nyq = 0.5*self.__settings["sampling"]
@@ -103,23 +103,23 @@ class Data(object):
         order = self.__settings["smooth"]["order"]
         if self.__filtered_fast is False:
             raise ValueError("No filtered data")
-        self.__smoothed_fast = np.zeros((self.__points, self.__cells))
+        self.__smoothed_fast = np.zeros((self.__cells, self.__points))
         for i in range(self.__cells):
-            self.__filtered_fast[:,i] = savgol_filter(self.__filtered_fast[:,i], points, order)
+            self.__filtered_fast[i] = savgol_filter(self.__filtered_fast[i], points, order)
 
     def plot_filtered(self, directory):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             raise ValueError("No filtered data!")
         for i in range(self.__cells):
             print(i)
-            mean = np.mean(self.__signal[:,i])
+            mean = np.mean(self.__signal[i])
 
             fig, (ax1, ax2) = plt.subplots(2)
-            ax1.plot(self.__time, self.__signal[:,i]-mean, linewidth=0.5, color='dimgrey')
-            ax1.plot(self.__time, self.__filtered_slow[:,i], linewidth=2, color='blue')
+            ax1.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
+            ax1.plot(self.__time, self.__filtered_slow[i], linewidth=2, color='blue')
 
-            ax2.plot(self.__time, self.__signal[:,i]-mean, linewidth=0.5, color='dimgrey')
-            ax2.plot(self.__time, self.__filtered_fast[:,i], linewidth=0.5, color='red')
+            ax2.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
+            ax2.plot(self.__time, self.__filtered_fast[i], linewidth=0.5, color='red')
             ax2.set_xlim(self.__settings["filter"]["plot"])
 
             plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
@@ -135,7 +135,7 @@ class Data(object):
 
         for cell in range(self.__cells):
             # Compute cumulative histogram and bins
-            signal = np.clip(self.__filtered_fast[:,cell], 0, None)
+            signal = np.clip(self.__filtered_fast[cell], 0, None)
             hist = np.histogram(signal, 50)
             cumulative_hist = np.flip(np.cumsum(np.flip(hist[0])))
             bins = hist[1]
@@ -200,9 +200,9 @@ class Data(object):
             else:
                 fig.suptitle("Score = {0:.2f} ({1})".format(score, "KEEP"))
 
-            mean = np.mean(self.__signal[:,cell])
-            ax1.plot(self.__time,self.__signal[:,cell]-mean,linewidth=0.5,color='dimgrey', zorder=0)
-            ax1.plot(self.__time,self.__filtered_fast[:,cell],linewidth=0.5,color='red', zorder=2)
+            mean = np.mean(self.__signal[cell])
+            ax1.plot(self.__time,self.__signal[cell]-mean,linewidth=0.5,color='dimgrey', zorder=0)
+            ax1.plot(self.__time,self.__filtered_fast[cell],linewidth=0.5,color='red', zorder=2)
             ax1.plot(self.__time, [p_root for i in self.__time], color="green", zorder=2)
             if q_root is not np.inf:
                 ax1.fill_between(self.__time, -q_root, q_root, color='orange', zorder=1)
@@ -220,24 +220,24 @@ class Data(object):
     def binarize_fast(self):
         if self.__distributions is False or self.__filtered_fast is False:
             raise ValueError("No distribution or filtered data.")
-        self.__binarized_fast = np.zeros((self.__points, self.__cells))
+        self.__binarized_fast = np.zeros((self.__cells, self.__points))
         for cell in range(self.__cells):
             if cell not in self.__good_cells:
                 pass
             threshold = self.__distributions[cell]["p_root"]
-            self.__binarized_fast[:,cell] = np.where(self.__filtered_fast[:,cell]>threshold, 1, 0)
+            self.__binarized_fast[cell] = np.where(self.__filtered_fast[cell]>threshold, 1, 0)
             self.__binarized_fast = self.__binarized_fast.astype(int)
 
     def binarize_slow(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
-        self.__binarized_slow = np.zeros((self.__points, self.__cells))
+        self.__binarized_slow = np.zeros((self.__cells, self.__points))
         for cell in range(self.__cells):
-            signal = self.__filtered_slow[:,cell]
-            self.__binarized_slow[:,cell] = np.heaviside(np.gradient(signal), 0)
+            signal = self.__filtered_slow[cell]
+            self.__binarized_slow[cell] = np.heaviside(np.gradient(signal), 0)
             extremes = []
             for i in range(1, self.__points):
-                if self.__binarized_slow[i,cell]!=self.__binarized_slow[i-1,cell]:
+                if self.__binarized_slow[cell,i]!=self.__binarized_slow[cell,i-1]:
                     extremes.append(i)
 
             up = self.__binarized_slow[0,cell]
@@ -248,13 +248,13 @@ class Data(object):
                     lower = counter+int(np.floor(interval/6*phi))
                     higher = counter+int(np.floor(interval/6*(phi+1)))
                     add = 1 if up else 7
-                    self.__binarized_slow[lower:higher,cell] = phi+add
+                    self.__binarized_slow[cell,lower:higher] = phi+add
                 up = (up+1)%2
                 counter = e
 
             # Erase values (from 0 to first extreme) and (last extreme to end)
-            self.__binarized_slow[0:extremes[0],cell] = 0
-            self.__binarized_slow[extremes[-1]:,cell] = 0
+            self.__binarized_slow[cell, 0:extremes[0]] = 0
+            self.__binarized_slow[cell, extremes[-1]:] = 0
             self.__binarized_slow = self.__binarized_slow.astype(int)
 
     def plot_binarized(self, directory):
@@ -268,25 +268,25 @@ class Data(object):
             fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
             fig.suptitle("Binarized data")
 
-            mean = np.mean(self.__signal[:,cell])
-            max_signal = max(abs(self.__signal[:,cell]-mean))
-            norm_signal = (self.__signal[:,cell]-mean)/max_signal
-            max_fast = max(abs(self.__filtered_fast[:,cell]))
+            mean = np.mean(self.__signal[cell])
+            max_signal = max(abs(self.__signal[cell]-mean))
+            norm_signal = (self.__signal[cell]-mean)/max_signal
+            max_fast = max(abs(self.__filtered_fast[cell]))
 
-            filtered_fast = self.__filtered_fast[:,cell]
+            filtered_fast = self.__filtered_fast[cell]
             threshold = self.__distributions[cell]["p_root"]
             ax1.plot(self.__time, norm_signal*max_fast, linewidth=0.5, color='dimgrey', alpha=0.5)
             ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='red')
-            ax1.plot(self.__time, self.__binarized_fast[:,cell]*threshold, linewidth=0.75, color='black')
+            ax1.plot(self.__time, self.__binarized_fast[cell]*threshold, linewidth=0.75, color='black')
             ax1.set_ylabel("Amplitude")
 
             ax3 = ax1.twinx()
             ax3.set_ylabel("Action potentials")
 
-            filtered_slow = self.__filtered_slow[:,cell]
+            filtered_slow = self.__filtered_slow[cell]
             ax2.plot(self.__time, 12/2*(norm_signal+1), linewidth=0.5, color='dimgrey', alpha=0.5)
             ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='blue')
-            ax2.plot(self.__time, self.__binarized_slow[:,cell], color='black')
+            ax2.plot(self.__time, self.__binarized_slow[cell], color='black')
             ax2.set_xlabel("Time [s]")
             ax2.set_ylabel("Amplitude")
 
@@ -301,11 +301,11 @@ class Data(object):
     def exclude_bad_cells(self):
         if self.__good_cells is False:
             raise ValueError("No good cells determined.")
-        self.__signal = self.__signal[:,self.__good_cells]
+        self.__signal = self.__signal[self.__good_cells]
         self.__positions = self.__positions[self.__good_cells]
 
-        self.__filtered_slow = self.__filtered_slow[:,self.__good_cells]
-        self.__filtered_fast = self.__filtered_fast[:,self.__good_cells]
+        self.__filtered_slow = self.__filtered_slow[self.__good_cells]
+        self.__filtered_fast = self.__filtered_fast[self.__good_cells]
 
         excluded_distributions = []
         for i in range(self.__cells):
@@ -315,8 +315,8 @@ class Data(object):
 
         self.__cells = len(self.__good_cells)
 
-        self.__binarized_slow = self.__binarized_slow[:,self.__good_cells]
-        self.__binarized_fast = self.__binarized_fast[:,self.__good_cells]
+        self.__binarized_slow = self.__binarized_slow[self.__good_cells]
+        self.__binarized_fast = self.__binarized_fast[self.__good_cells]
 
     def is_analyzed(self):
         if self.__filtered_slow is False or self.__filtered_fast is False:
