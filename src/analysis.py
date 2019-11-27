@@ -24,21 +24,21 @@ class Analysis(object):
 
         # Split filtered data into slices
         filtered_slow = data.get_filtered_slow().T[start:stop]
-        filtered_slow = np.array(np.array_split(filtered_slow, self.__slices))
-        self.__filtered_slow = np.transpose(filtered_slow, (0,2,1))
+        filtered_slow = np.array_split(filtered_slow, self.__slices)
+        self.__filtered_slow = [filtered_slow[i].T for i in range(self.__slices)]
 
         filtered_fast = data.get_filtered_fast().T[start:stop]
-        filtered_fast = np.array(np.array_split(filtered_fast, self.__slices))
-        self.__filtered_fast = np.transpose(filtered_fast, (0,2,1))
+        filtered_fast = np.array_split(filtered_fast, self.__slices)
+        self.__filtered_fast = [filtered_fast[i].T for i in range(self.__slices)]
 
         # Split binarized data into slices
         binarized_slow = data.get_binarized_slow().T[start:stop]
-        binarized_slow = np.array(np.array_split(binarized_slow, self.__slices))
-        self.__binarized_slow = np.transpose(binarized_slow, (0,2,1))
+        binarized_slow = np.array_split(binarized_slow, self.__slices)
+        self.__binarized_slow = [binarized_slow[i].T for i in range(self.__slices)]
 
         binarized_fast = data.get_binarized_fast().T[start:stop]
-        binarized_fast = np.array(np.array_split(binarized_fast, self.__slices))
-        self.__binarized_fast = np.transpose(binarized_fast, (0,2,1))
+        binarized_fast = np.array_split(binarized_fast, self.__slices)
+        self.__binarized_fast = [binarized_fast[i].T for i in range(self.__slices)]
 
         # Construct networks and build networks from sliced data
         self.__networks = Networks(settings, self.__cells, self.__filtered_slow, self.__filtered_fast)
