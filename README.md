@@ -10,7 +10,7 @@ The default structure is:
 │   │   ├── filtered
 │   │   ├── distributions
 │   │   ├── binarized
-│   │   ├── analysis
+│   │   ├── analized
 │   │   ├── series001.dat
 │   │   ├── positions001.dat
 │   │   ├── settings.yaml

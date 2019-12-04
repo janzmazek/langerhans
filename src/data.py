@@ -21,7 +21,7 @@ class Data(object):
         self.__positions = positions
         self.__settings = settings
 
-        assert self.__positions.shape[0] == self.__signal.shape[0]
+        self.__check_arguments()
 
         self.__points = len(self.__time)
         self.__cells = len(self.__signal)
@@ -79,6 +79,15 @@ class Data(object):
     def get_binarized_slow(self): return self.__binarized_slow
     def get_binarized_fast(self): return self.__binarized_fast
 
+# ------------------------------ ERROR METHODS ------------------------------- #
+    def __check_arguments(self):
+        if len(self.__signal.shape) != 2:
+            raise ValueError("Series must be 2D array.")
+        elif len(self.__positions.shape) != 2 or self.__positions.shape[1] != 2:
+            raise ValueError("Positions must be 2D array with 2 columns.")
+        elif self.__positions.shape[0] != self.__signal.shape[0]:
+            raise ValueError("Number of cells in positions and signal is different.")
+
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
 # ---------- Filter + smooth ---------- #
     def filter(self):
@@ -111,7 +120,6 @@ class Data(object):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             raise ValueError("No filtered data!")
         for i in range(self.__cells):
-            print(i)
             mean = np.mean(self.__signal[i])
 
             fig, (ax1, ax2) = plt.subplots(2)
@@ -183,8 +191,6 @@ class Data(object):
         if self.__distributions is False:
             raise ValueError("No distribution data.")
         for cell in range(self.__cells):
-            print(cell)
-
             hist = self.__distributions[cell]["hist"]
             x = self.__distributions[cell]["bins"]
             p = self.__distributions[cell]["p"]
@@ -204,6 +210,8 @@ class Data(object):
             ax1.plot(self.__time,self.__signal[cell]-mean,linewidth=0.5,color='dimgrey', zorder=0)
             ax1.plot(self.__time,self.__filtered_fast[cell],linewidth=0.5,color='red', zorder=2)
             ax1.plot(self.__time, [p_root for i in self.__time], color="green", zorder=2)
+            ax1.axvline(x=self.__settings["analysis"]["interval"][0])
+            ax1.axvline(x=self.__settings["analysis"]["interval"][1])
             if q_root is not np.inf:
                 ax1.fill_between(self.__time, -q_root, q_root, color='orange', zorder=1)
 
@@ -295,8 +303,6 @@ class Data(object):
 
             plt.savefig("{0}/{1}.pdf".format(directory, cell), dpi=200, bbox_inches='tight')
             plt.close()
-
-            print(cell)
 
     def exclude_bad_cells(self):
         if self.__good_cells is False:

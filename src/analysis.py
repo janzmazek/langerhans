@@ -44,12 +44,6 @@ class Analysis(object):
         self.__networks = Networks(settings, self.__cells, self.__filtered_slow, self.__filtered_fast)
         self.__networks.build_networks()
 
-        # Compute network and dynamics parameters
-        self.__parameters = self.__compute_parameters()
-
-# --------------------------------- GETTERS ---------------------------------- #
-
-
 # ---------------------------- ANALYSIS FUNCTIONS ---------------------------- #
     def __search_sequence(self, arr, seq):
         # Store sizes of input array and sequence
@@ -73,7 +67,7 @@ class Analysis(object):
     def draw_networks(self, location):
         self.__networks.draw_networks(self.__positions, location)
 
-    def __compute_parameters(self):
+    def compute_parameters(self):
         G_slow = self.__networks.get_G_slow()
         G_fast = self.__networks.get_G_fast()
 
@@ -102,10 +96,19 @@ class Analysis(object):
         bin_slow = self.__binarized_slow[slice][cell]
         bin_fast = self.__binarized_fast[slice][cell]
 
-        frequency_slow = self.__search_sequence(bin_slow, [11,12]).size
-        frequency_slow = frequency_slow/len(bin_slow)*self.__sampling
-        frequency_fast = self.__search_sequence(bin_fast, [0,1]).size
-        frequency_fast = frequency_fast/len(bin_fast)*self.__sampling
+        slow_peaks = self.__search_sequence(bin_slow, [11,12])
+        if slow_peaks.size < 2:
+            frequency_slow = None
+        else:
+            slow_interval = slow_peaks[-1]-slow_peaks[0]
+            frequency_slow = (slow_peaks.size-1)/slow_interval*self.__sampling
+
+        fast_peaks = self.__search_sequence(bin_fast, [0,1])
+        if fast_peaks.size < 2:
+            frequency_fast = None
+        else:
+            fast_interval = fast_peaks[-1]-fast_peaks[0]
+            frequency_fast = (fast_peaks.size-1)/fast_interval*self.__sampling
 
         return (frequency_slow, frequency_fast)
 
@@ -136,13 +139,14 @@ class Analysis(object):
 
     def plot_analysis(self, directory):
         for slice in range(self.__slices):
+            par_values = self.compute_parameters()
             pars = ("NDs", "NDf", "Cs", "Cf", "NNDs", "NNDf", "AT", "Fs", "Ff", "ISI", "ISIV")
 
             fig, ax = plt.subplots(len(pars), len(pars), figsize=(75, 75))
             for p1 in range(len(pars)):
                 for p2 in range(p1+1):
-                    x = np.array([self.__parameters[slice][c][pars[p1]] for c in range(self.__cells)])
-                    y = np.array([self.__parameters[slice][c][pars[p2]] for c in range(self.__cells)])
+                    x = np.array([par_values[slice][c][pars[p1]] for c in range(self.__cells)])
+                    y = np.array([par_values[slice][c][pars[p2]] for c in range(self.__cells)])
 
                     both_not_None = np.logical_and(x != None, y != None)
                     x = x[both_not_None].astype(float)
