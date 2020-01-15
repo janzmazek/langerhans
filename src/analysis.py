@@ -7,7 +7,21 @@ class Analysis(object):
     """docstring for Analysis."""
 
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, data):
+    def __init__(self):
+        self.__build_networks = None
+        self.__sampling = None
+        self.__slices = None
+        self.__points = None
+        self.__cells = None
+        self.__positions = None
+        self.__filtered_slow = None
+        self.__filtered_fast = None
+        self.__binarized_slow = None
+        self.__binarized_fast = None
+        self.__networks = None
+
+    def add_data(self, data, build_networks=True):
+        self.__build_networks = build_networks
         assert data.is_analyzed()
 
         # Get settings from data object
@@ -40,9 +54,10 @@ class Analysis(object):
         binarized_fast = np.array_split(binarized_fast, self.__slices)
         self.__binarized_fast = [binarized_fast[i].T for i in range(self.__slices)]
 
-        # Construct networks and build networks from sliced data
-        self.__networks = Networks(settings, self.__cells, self.__filtered_slow, self.__filtered_fast)
-        self.__networks.build_networks()
+        if self.__build_networks:
+            # Construct networks and build networks from sliced data
+            self.__networks = Networks(settings, self.__cells, self.__filtered_slow, self.__filtered_fast)
+            self.__networks.build_networks()
 
 # ---------------------------- ANALYSIS FUNCTIONS ---------------------------- #
     def __search_sequence(self, arr, seq):
@@ -67,24 +82,43 @@ class Analysis(object):
     def draw_networks(self, location):
         self.__networks.draw_networks(self.__positions, location)
 
+    def print_average_frequency(self):
+        fast = []
+        for slice in range(self.__slices):
+            for cell in range(self.__cells):
+                (s, f) = self.__frequency(slice, cell)
+                fast.append(f)
+        print(np.mean(fast))
+
+    def print_active_time(self):
+        at = []
+        for slice in range(self.__slices):
+            for cell in range(self.__cells):
+                active_time = self.__active_time(slice, cell)
+                at.append(active_time)
+        print(np.mean(at))
+
+
     def compute_parameters(self):
-        G_slow = self.__networks.get_G_slow()
-        G_fast = self.__networks.get_G_fast()
+        if self.__build_networks:
+            G_slow = self.__networks.get_G_slow()
+            G_fast = self.__networks.get_G_fast()
 
         par = [[dict() for c in range(self.__cells)] for s in range(self.__slices)]
         for slice in range(self.__slices):
             for cell in range(self.__cells):
-                par[slice][cell]["NDs"] = self.__networks.node_degree(slice, cell)[0]
-                par[slice][cell]["NDf"] = self.__networks.node_degree(slice, cell)[1]
-                par[slice][cell]["Cs"] = self.__networks.clustering(slice, cell)[0]
-                par[slice][cell]["Cf"] = self.__networks.clustering(slice, cell)[1]
-                par[slice][cell]["NNDs"] = self.__networks.nearest_neighbour_degree(slice, cell)[0]
-                par[slice][cell]["NNDf"] = self.__networks.nearest_neighbour_degree(slice, cell)[1]
                 par[slice][cell]["AT"] = self.__active_time(slice, cell)
                 par[slice][cell]["Fs"] = self.__frequency(slice, cell)[0]
                 par[slice][cell]["Ff"] = self.__frequency(slice, cell)[1]
                 par[slice][cell]["ISI"] = self.__interspike_variation(slice, cell)[0]
                 par[slice][cell]["ISIV"] = self.__interspike_variation(slice, cell)[1]
+                if self.__build_networks:
+                    par[slice][cell]["NDs"] = self.__networks.node_degree(slice, cell)[0]
+                    par[slice][cell]["NDf"] = self.__networks.node_degree(slice, cell)[1]
+                    par[slice][cell]["Cs"] = self.__networks.clustering(slice, cell)[0]
+                    par[slice][cell]["Cf"] = self.__networks.clustering(slice, cell)[1]
+                    par[slice][cell]["NNDs"] = self.__networks.nearest_neighbour_degree(slice, cell)[0]
+                    par[slice][cell]["NNDf"] = self.__networks.nearest_neighbour_degree(slice, cell)[1]
 
         return par
 
