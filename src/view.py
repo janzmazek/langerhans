@@ -53,6 +53,9 @@ class View(tk.Tk):
         exclude_button = tk.Button(self.toolbar, text="exclude", command=lambda: self.controller.exclude_click())
         exclude_button.pack(side=tk.RIGHT)
 
+        unexclude_button = tk.Button(self.toolbar, text="unexclude", command=lambda: self.controller.unexclude_click())
+        unexclude_button.pack(side=tk.RIGHT)
+
         self.minsize(width=WIDTH, height=HEIGHT)
         self.controller = None
 

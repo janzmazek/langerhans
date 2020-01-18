@@ -29,6 +29,8 @@ class Data(object):
         self.__binarized_fast = False
         self.__good_cells = False
 
+# --------------------------------- IMPORTS ---------------------------------- #
+
     def import_data(self, series, positions, settings):
         self.__signal = series[:,1:].transpose()
         sampling = settings["sampling"]
@@ -41,35 +43,14 @@ class Data(object):
         self.__points = len(self.__time)
         self.__cells = len(self.__signal)
 
-# -------------------------------- IMPORTERS --------------------------------- #
-    def import_filtered_slow(self, path):
-        self.__filtered_slow = np.loadtxt(path)
+        self.__good_cells = np.ones(self.__cells, dtype="bool")
 
-    def import_filtered_fast(self, path):
-        self.__filtered_fast = np.loadtxt(path)
-
-    def import_binarized_slow(self, path):
-        self.__binarized_slow = np.loadtxt(path).astype(int)
-
-    def import_binarized_fast(self, path):
-        self.__binarized_fast = np.loadtxt(path).astype(int)
-
-# ---------------------------------- SAVERS ---------------------------------- #
-    def save_filtered_slow(self, path):
-        if self.__filtered_slow is False:
-            raise ValueError("No filtered data!")
-        np.savetxt(path, self.__filtered_slow)
-
-    def save_filtered_fast(self, path):
-        if self.__filtered_fast is False:
-            raise ValueError("No filtered data!")
-        np.savetxt(path, self.__filtered_fast)
-
-    def save_binarized_slow(self, path):
-        np.savetxt(path, self.__binarized_slow, fmt="%d")
-
-    def save_binarized_fast(self, path):
-        np.savetxt(path, self.__binarized_fast, fmt="%d")
+    def import_cells(self, cells):
+        if self.__signal is False:
+            raise ValueError("No imported data!")
+        if len(sells) != self.__cells:
+            raise ValueError("Cell number does not match.")
+        self.__good_cells = cells
 
 # --------------------------------- GETTERS ---------------------------------- #
     def get_settings(self): return self.__settings
@@ -95,6 +76,8 @@ class Data(object):
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
     def plot(self, i):
+        if self.__signal is False:
+            raise ValueError("No imported data!")
         if i not in range(self.__cells):
             raise ValueError("Cell index not in range.")
         mean = np.mean(self.__signal[i])
@@ -143,15 +126,16 @@ class Data(object):
         fig, (ax1, ax2) = plt.subplots(2)
         ax1.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
         ax1.plot(self.__time, self.__filtered_slow[i], linewidth=2, color='blue')
+        ax1.set_xlabel("Time [s]")
+        ax1.set_ylabel("Amplitude (slow)")
 
         ax2.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
         ax2.plot(self.__time, self.__filtered_fast[i], linewidth=0.5, color='red')
         ax2.set_xlim(self.__settings["filter"]["plot"])
+        ax2.set_xlabel("Time [s]")
+        ax2.set_ylabel("Amplitude (fast)")
 
         return fig
-
-        # plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
-        # plt.close()
 
 # ---------- Binarize ---------- #
 
@@ -159,7 +143,6 @@ class Data(object):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
         self.__distributions = [dict() for i in range(self.__cells)]
-        self.__good_cells = []
 
         for cell in range(self.__cells):
             # Compute cumulative histogram and bins
@@ -192,13 +175,6 @@ class Data(object):
             phi = np.arctan(abs(min_value))/(np.pi/2)
             score = (1-phi)*p_root/q_root
 
-            # Excluding thresholds
-            score_threshold = self.__settings["exclude"]["score_threshold"]
-            spikes_threshold = self.__settings["exclude"]["spikes_threshold"]
-
-            if score>score_threshold and np.exp(p(p_root))>spikes_threshold*self.__points:
-                self.__good_cells.append(cell)
-
             self.__distributions[cell]["hist"] = cumulative_hist
             self.__distributions[cell]["bins"] = x
             self.__distributions[cell]["p"] = p
@@ -219,20 +195,22 @@ class Data(object):
         score = self.__distributions[i]["score"]
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
-        if i not in self.__good_cells:
+        if self.__good_cells[i] == False:
             ax1.set_facecolor('xkcd:salmon')
             fig.suptitle("Score = {0:.2f} ({1})".format(score, "EXCLUDE"))
         else:
             fig.suptitle("Score = {0:.2f} ({1})".format(score, "KEEP"))
 
         mean = np.mean(self.__signal[i])
-        ax1.plot(self.__time,self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0)
-        ax1.plot(self.__time,self.__filtered_fast[i],linewidth=0.5,color='red', zorder=2)
+        ax1.plot(self.__time, self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0)
+        ax1.plot(self.__time, self.__filtered_fast[i],linewidth=0.5,color='red', zorder=2)
         ax1.plot(self.__time, [p_root for i in self.__time], color="green", zorder=2)
         ax1.axvline(x=self.__settings["analysis"]["interval"][0])
         ax1.axvline(x=self.__settings["analysis"]["interval"][1])
         if q_root is not np.inf:
             ax1.fill_between(self.__time, -q_root, q_root, color='orange', zorder=1)
+        ax1.set_xlabel("Time [s]")
+        ax1.set_ylabel("Amplitude")
 
         ax2.bar(x, hist, max(x)/len(x), log=True)
         ax2.plot(x, np.exp(p(x)), color="k")
@@ -240,16 +218,43 @@ class Data(object):
         if q_root != np.inf:
             ax2.plot(np.linspace(0,q_root,10), np.exp(q(np.linspace(0,q_root,10))), color="orange")
             ax2.plot(q_root, np.exp(q(q_root)), marker="o", color="orange")
+        ax2.set_xlabel("Signal height h")
+        ax2.set_ylabel("Data points N")
 
         return fig
+
+# ---------- Exclude ---------- #
+    def autoexclude(self):
+        if self.__distributions is False:
+            raise ValueError("No distributions.")
+        # Excluding thresholds
+        score_threshold = self.__settings["exclude"]["score_threshold"]
+        spikes_threshold = self.__settings["exclude"]["spikes_threshold"]
+
+        for cell in range(self.__cells):
+            p = self.__distributions[cell]["p"]
+            p_root = self.__distributions[cell]["p_root"]
+            score = self.__distributions[cell]["score"]
+            if score<score_threshold or np.exp(p(p_root))<spikes_threshold*self.__points:
+                self.__good_cells[cell] = False
+
+    def exclude(self, cell):
+        if cell not in range(self.__cells):
+            raise ValueError("Cell not in range.")
+        self.__good_cells[cell] = False
+
+    def unexclude(self, cell):
+        if cell not in range(self.__cells):
+            raise ValueError("Cell not in range.")
+        self.__good_cells[cell] = True
+
+# ---------- Binarize ---------- #
 
     def binarize_fast(self):
         if self.__distributions is False or self.__filtered_fast is False:
             raise ValueError("No distribution or filtered data.")
         self.__binarized_fast = np.zeros((self.__cells, self.__points))
         for cell in range(self.__cells):
-            if cell not in self.__good_cells:
-                pass
             threshold = self.__distributions[cell]["p_root"]
             self.__binarized_fast[cell] = np.where(self.__filtered_fast[cell]>threshold, 1, 0)
             self.__binarized_fast = self.__binarized_fast.astype(int)
@@ -317,33 +322,21 @@ class Data(object):
 
         return fig
 
-    def exclude_bad_cell(self, i):
-        good_cells = np.arange(self.__cells)
-        self.__good_cells = np.delete(good_cells, i)
-
-        self.exclude_bad_cells()
-
-    def exclude_bad_cells(self):
-        if self.__good_cells is False:
-            raise ValueError("No good cells determined.")
-        self.__signal = self.__signal[self.__good_cells]
-        self.__positions = self.__positions[self.__good_cells]
-
-        self.__filtered_slow = self.__filtered_slow[self.__good_cells]
-        self.__filtered_fast = self.__filtered_fast[self.__good_cells]
-
-        excluded_distributions = []
+    def save_plots(self, type, directory):
+        if type not in ("raw", "filtered", "distributions", "binarized"):
+            raise ValueError("Unknown 'type' argument.")
         for i in range(self.__cells):
-            if i in self.__good_cells:
-                excluded_distributions.append(self.__distributions[i])
-        self.__distributions = excluded_distributions
+            if type == "raw":
+                fig = self.plot(i)
+            elif type == "filtered":
+                fig = self.plot_filtered(i)
+            elif type == "distributions":
+                fig = self.plot_distributions(i)
+            elif type == "binarized":
+                fig = self.plot_binarized(i)
+            plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
+            plt.close()
 
-        self.__cells = len(self.__good_cells)
-
-        self.__binarized_slow = self.__binarized_slow[self.__good_cells]
-        self.__binarized_fast = self.__binarized_fast[self.__good_cells]
-
-        self.__good_cells = False
 
     def is_analyzed(self):
         if self.__filtered_slow is False or self.__filtered_fast is False:

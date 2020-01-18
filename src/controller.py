@@ -23,6 +23,8 @@ class Controller(object):
 
     def import_data(self):
         directory_path = self.view.open_directory()
+        if directory_path is None:
+            return
         series_number = os.path.basename(directory_path)
 
         series_location = os.path.join(directory_path, "series" + series_number + ".dat")
@@ -78,16 +80,9 @@ class Controller(object):
         except:
             print("Something wrong")
 
-    def autoexclude_click(self):
-        try:
-            self.data.exclude_bad_cells()
-            self.draw_fig()
-        except:
-            print("Something wrong")
-
     def previous_click(self):
         if self.current_stage == 0:
-            pass
+            return
         if self.current_number > 0:
             self.current_number -= 1
             self.view.cell_number_text.config(text=self.current_number)
@@ -95,18 +90,31 @@ class Controller(object):
 
     def next_click(self):
         if self.current_stage == 0:
-            pass
+            return
         if self.current_number < self.data.get_cells()-1:
             self.current_number += 1
             self.view.cell_number_text.config(text=self.current_number)
             self.draw_fig()
 
     def exclude_click(self):
-        if self.current_stage < 3:
-            pass
-        self.data.exclude_bad_cell(self.current_number)
-        if self.current_number != 0:
-            self.current_number -= 1
+        try:
+            self.data.exclude(self.current_number)
+        except:
+            print("Something wrong")
+        self.draw_fig()
+
+    def unexclude_click(self):
+        try:
+            self.data.unexclude(self.current_number)
+        except:
+            print("Something wrong")
+        self.draw_fig()
+
+    def autoexclude_click(self):
+        try:
+            self.data.autoexclude()
+        except:
+            print("Something wrong")
         self.draw_fig()
 
 
