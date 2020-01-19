@@ -6,9 +6,8 @@ import matplotlib.pyplot as plt
 class Controller(object):
     """docstring for Controller."""
 
-    def __init__(self, data, analysis, view):
+    def __init__(self, data, view):
         self.data = data
-        self.analysis = analysis
         self.view = view
 
         self.view.register(self)
@@ -29,6 +28,7 @@ class Controller(object):
 
         series_location = os.path.join(directory_path, "series" + series_number + ".dat")
         settings_location = os.path.join(directory_path, "settings.yaml")
+        # if settings_location is false: load sample settings file
 
         filtered_location = os.path.join(directory_path, "filtered")
         distributions_location = os.path.join(directory_path, "distributions")
@@ -56,29 +56,53 @@ class Controller(object):
 # --------------------------- Button click methods --------------------------- #
 
     def filter_click(self):
-        try:
-            self.data.filter()
+        if self.current_stage == 0:
+            return
+        if self.data.get_filtered_slow() is not False or self.data.get_filtered_fast() is not False:
             self.current_stage = 2
             self.draw_fig()
-        except:
-            print("Something wrong")
+        else:
+            try:
+                self.data.filter()
+                self.current_stage = 2
+                self.draw_fig()
+            except ValueError as e:
+                print(e)
+            except:
+                print("Something wrong")
 
     def distributions_click(self):
-        try:
-            self.data.compute_distributions()
+        if self.current_stage == 0:
+            return
+        elif self.data.get_distributions() is not False:
             self.current_stage = 3
             self.draw_fig()
-        except:
-            print("Something wrong")
+        else:
+            try:
+                self.data.compute_distributions()
+                self.current_stage = 3
+                self.draw_fig()
+            except ValueError as e:
+                print(e)
+            except:
+                print("Something wrong")
 
     def binarize_click(self):
-        try:
-            self.data.binarize_slow()
-            self.data.binarize_fast()
+        if self.current_stage == 0:
+            return
+        if self.data.get_binarized_slow() is not False or self.data.get_binarized_fast() is not False:
             self.current_stage = 4
             self.draw_fig()
-        except:
-            print("Something wrong")
+        else:
+            try:
+                self.data.binarize_slow()
+                self.data.binarize_fast()
+                self.current_stage = 4
+                self.draw_fig()
+            except ValueError as e:
+                print(e)
+            except:
+                print("Something wrong")
 
     def previous_click(self):
         if self.current_stage == 0:
@@ -97,22 +121,34 @@ class Controller(object):
             self.draw_fig()
 
     def exclude_click(self):
+        if self.current_stage == 0:
+            return
         try:
             self.data.exclude(self.current_number)
+        except ValueError as e:
+            print(e)
         except:
             print("Something wrong")
         self.draw_fig()
 
     def unexclude_click(self):
+        if self.current_stage == 0:
+            return
         try:
             self.data.unexclude(self.current_number)
+        except ValueError as e:
+            print(e)
         except:
             print("Something wrong")
         self.draw_fig()
 
     def autoexclude_click(self):
+        if self.current_stage == 0:
+            return
         try:
             self.data.autoexclude()
+        except ValueError as e:
+            print(e)
         except:
             print("Something wrong")
         self.draw_fig()
@@ -120,7 +156,7 @@ class Controller(object):
 
     def draw_fig(self):
         if self.current_stage == 0:
-            pass
+            return
         plt.close()
         if self.current_stage == 1:
             self.view.draw_fig(self.data.plot(self.current_number))
@@ -130,3 +166,30 @@ class Controller(object):
             self.view.draw_fig(self.data.plot_distributions(self.current_number))
         elif self.current_stage == 4:
             self.view.draw_fig(self.data.plot_binarized(self.current_number))
+
+    def edit_settings(self):
+        if self.current_stage == 0:
+            return
+        settings = self.data.get_settings()
+        self.view.open_settings_window(settings)
+
+    def apply_parameters_click(self):
+        new_settings = self.__get_values(self.view.entries)
+        self.data.import_settings(new_settings)
+        self.data.reset_computations()
+        self.current_stage = 1
+        self.draw_fig()
+
+    def __get_values(self, parameter):
+        if type(parameter) not in (dict, list):
+            return float(parameter.get())
+        elif type(parameter) is dict:
+            dictionary = {}
+            for key in parameter:
+                dictionary[key] = self.__get_values(parameter[key])
+            return dictionary
+        elif type(parameter) is list:
+            array = []
+            for key in parameter:
+                array.append(self.__get_values(key))
+            return array

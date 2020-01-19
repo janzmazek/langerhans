@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import copy
 
 
 # Window parameters
@@ -18,10 +19,13 @@ class View(tk.Tk):
         menubar = tk.Menu(self)
 
         filemenu = tk.Menu(menubar, tearoff=0)
+        editmenu = tk.Menu(menubar, tearoff=0)
 
         menubar.add_cascade(label="File", menu=filemenu)
         filemenu.add_command(label="Import data", command=lambda: self.controller.import_data())
         filemenu.add_command(label="Save data", command=lambda: 0)
+        menubar.add_cascade(label="Edit", menu=editmenu)
+        editmenu.add_command(label="Settings", command=lambda: self.controller.edit_settings())
 
         self.config(menu=menubar)
         self.canvas = False
@@ -78,3 +82,37 @@ class View(tk.Tk):
         self.canvas = FigureCanvasTkAgg(fig, master=self)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+    def open_settings_window(self, settings):
+        # Open window
+        self.settings_window = tk.Toplevel()
+        self.settings_window.title("Settings")
+
+        # Add upper frame
+        main_frame = tk.Frame(self.settings_window)
+        main_frame.pack(fill=tk.BOTH, expand=tk.YES)
+
+        self.entries = self.__add_frame(settings, main_frame)
+
+        apply_parameters_button = tk.Button(main_frame, text="Apply parameters", command=lambda: self.controller.apply_parameters_click())
+        apply_parameters_button.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=tk.YES)
+
+    def __add_frame(self, parameter, container):
+        if type(parameter) in (int, float):
+            e = tk.Entry(container)
+            e.pack(side=tk.LEFT)
+            e.delete(0, tk.END)
+            e.insert(0, parameter)
+            return e
+        elif type(parameter) is dict:
+            dictionary = {}
+            for key in parameter:
+                parameter_frame = tk.LabelFrame(container, text=key)
+                parameter_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
+                dictionary[key] = self.__add_frame(parameter[key], parameter_frame)
+            return dictionary
+        elif type(parameter) is list:
+            array = []
+            for key in range(len(parameter)):
+                array.append(self.__add_frame(parameter[key], container))
+            return array

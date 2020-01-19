@@ -52,6 +52,18 @@ class Data(object):
             raise ValueError("Cell number does not match.")
         self.__good_cells = cells
 
+    def import_settings(self, settings):
+        self.__settings = settings
+
+    def reset_computations(self):
+        self.__filtered_slow = False
+        self.__filtered_fast = False
+        self.__distributions = False
+        self.__binarized_slow = False
+        self.__binarized_fast = False
+        self.__good_cells = np.ones(self.__cells, dtype="bool")
+
+
 # --------------------------------- GETTERS ---------------------------------- #
     def get_settings(self): return self.__settings
     def get_time(self): return self.__time
@@ -85,6 +97,8 @@ class Data(object):
         fig, ax = plt.subplots()
         ax.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
         ax.set_xlim(self.__settings["filter"]["plot"])
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Amplitude")
 
         return fig
 # ---------- Filter + smooth ---------- #
@@ -290,7 +304,7 @@ class Data(object):
 
     def plot_binarized(self, i):
         if self.__binarized_slow is False or self.__binarized_fast is False:
-            raise ValueError("No filtered data!")
+            raise ValueError("No binarized data!")
 
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
         fig.suptitle("Binarized data")

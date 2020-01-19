@@ -6,8 +6,7 @@ from src.controller import Controller
 
 if __name__ == '__main__':
     data = Data()
-    analysis = Analysis()
     view = View()
-    controller = Controller(data, analysis, view)
+    controller = Controller(data, view)
 
     view.mainloop()
