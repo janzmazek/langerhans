@@ -10,6 +10,35 @@ import matplotlib.animation as animation
 from matplotlib.colors import colorConverter
 
 EXCLUDE_COLOR = 'xkcd:salmon'
+SAMPLE_SETTINGS = {
+    "sampling": 10,
+    "filter":
+        {
+        "slow": [0.001, 0.005],
+        "fast": [0.04, 0.4],
+        "plot": [250, 1750]
+        },
+    "smooth":
+        {
+        "points": 51,
+        "order": 5
+        },
+    "distribution_order": 5,
+    "exclude":
+        {
+        "score_threshold": 1.5,
+        "spikes_threshold": 0.01
+        },
+    "analysis":
+        {
+        "interval": [600, 2900]
+        },
+    "network":
+        {
+        "average_degree": 7,
+        "slices": 1
+        }
+    }
 
 class Data(object):
     """
@@ -19,7 +48,6 @@ class Data(object):
     def __init__(self):
         self.__signal = False
         self.__time = False
-        self.__positions = False
         self.__settings = False
 
         self.__points = False
@@ -32,45 +60,45 @@ class Data(object):
         self.__good_cells = False
 
 # --------------------------------- IMPORTS ---------------------------------- #
-
-    def import_data(self, series, positions, settings):
-        self.__signal = series[:,1:].transpose()
-        sampling = settings["sampling"]
-        self.__time = np.arange(len(self.__signal[0]))*(1/sampling)
-        self.__positions = positions
+    def import_settings(self, settings):
         self.__settings = settings
 
-        self.__check_arguments()
+    def import_data(self, series):
+        self.__signal = series[:,1:].transpose()
+        if self.__settings is False:
+            self.__settings = SAMPLE_SETTINGS
+        sampling = self.__settings["sampling"]
+        self.__time = np.arange(len(self.__signal[0]))*(1/sampling)
 
         self.__points = len(self.__time)
         self.__cells = len(self.__signal)
 
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
-    def import_cells(self, cells):
+    def import_excluded(self, cells):
         if self.__signal is False:
             raise ValueError("No imported data!")
-        if len(sells) != self.__cells:
+        if len(cells) != self.__cells:
             raise ValueError("Cell number does not match.")
         self.__good_cells = cells
 
     def import_settings(self, settings):
         self.__settings = settings
 
-    def reset_computations(self):
+    def reset_computations(self, stage):
         self.__filtered_slow = False
         self.__filtered_fast = False
         self.__distributions = False
         self.__binarized_slow = False
         self.__binarized_fast = False
-        self.__good_cells = np.ones(self.__cells, dtype="bool")
+        if stage is not 0:
+            self.__good_cells = np.ones(self.__cells, dtype="bool")
 
 
 # --------------------------------- GETTERS ---------------------------------- #
     def get_settings(self): return self.__settings
     def get_time(self): return self.__time
     def get_signal(self): return self.__signal
-    def get_positions(self): return self.__positions
     def get_points(self): return self.__points
     def get_cells(self): return self.__cells
     def get_filtered_slow(self): return self.__filtered_slow
@@ -78,15 +106,7 @@ class Data(object):
     def get_distributions(self): return self.__distributions
     def get_binarized_slow(self): return self.__binarized_slow
     def get_binarized_fast(self): return self.__binarized_fast
-
-# ------------------------------ ERROR METHODS ------------------------------- #
-    def __check_arguments(self):
-        if len(self.__signal.shape) != 2:
-            raise ValueError("Series must be 2D array.")
-        elif len(self.__positions.shape) != 2 or self.__positions.shape[1] != 2:
-            raise ValueError("Positions must be 2D array with 2 columns.")
-        elif self.__positions.shape[0] != self.__signal.shape[0]:
-            raise ValueError("Number of cells in positions and signal is different.")
+    def get_good_cells(self): return self.__good_cells
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
     def plot(self, i):

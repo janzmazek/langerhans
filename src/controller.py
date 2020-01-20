@@ -14,45 +14,47 @@ class Controller(object):
 
         self.current_number = 0
         self.current_stage = 0
-        # 0 = start
-        # 1 = import
-        # 2 = filter
-        # 3 = distribute
-        # 4 = binarize
 
 # ---------------------------- Menu click methods ---------------------------- #
-
     def import_data(self):
-        directory_path = self.view.open_directory()
-        if directory_path is None:
+        filename = self.view.open_file()
+        if filename is None:
             return
-        series_number = os.path.basename(directory_path)
-
-        series_location = os.path.join(directory_path, "series" + series_number + ".dat")
-        settings_location = os.path.join(directory_path, "settings.yaml")
-        # if settings_location is false: load sample settings file
-
-        filtered_location = os.path.join(directory_path, "filtered")
-        distributions_location = os.path.join(directory_path, "distributions")
-        binarized_location = os.path.join(directory_path, "binarized")
-        networks_location = os.path.join(directory_path, "networks")
-        analized_location = os.path.join(directory_path, "analized")
-
-        positions_location = os.path.join(directory_path, "positions" + series_number + ".dat")
-
-        series = np.loadtxt(series_location)[:-1,:]
-        positions = np.loadtxt(positions_location)
-        with open(settings_location, 'r') as stream:
-            try:
-                settings = yaml.safe_load(stream)
-            except yaml.YAMLError as exc:
-                raise(ValueError("Could not open settings file."))
+        series = np.loadtxt(filename)[:-1,:]
         try:
-            self.data.import_data(series, positions, settings)
+            self.data.import_data(series)
             self.current_stage = "imported"
         except:
             print("Something wrong")
 
+        self.draw_fig()
+
+    def import_settings(self):
+        filename = self.view.open_file()
+        if filename is None:
+            return
+        with open(filename, 'r') as stream:
+            try:
+                settings = yaml.safe_load(stream)
+            except yaml.YAMLError as exc:
+                raise(ValueError("Could not open settings file."))
+        self.data.import_settings(settings)
+        self.data.reset_computations(self.current_stage)
+        if self.current_stage is not 0:
+            self.current_stage = "imported"
+        self.draw_fig()
+
+    def import_excluded(self):
+        if self.current_stage == 0:
+            return
+        filename = self.view.open_file()
+        if filename is None:
+            return
+        try:
+            good_cells = np.loadtxt(filename, dtype=bool)
+            self.data.import_excluded(good_cells)
+        except ValueError as e:
+            print(e)
         self.draw_fig()
 
     def edit_settings(self):
@@ -60,6 +62,13 @@ class Controller(object):
             return
         settings = self.data.get_settings()
         self.view.open_settings_window(settings)
+
+    def save_settings(self):
+        if self.data.get_settings() is False:
+            return
+        filename = self.view.save_as("yaml")
+        with open(filename, "w") as outfile:
+            yaml.dump(self.data.get_settings(), outfile, default_flow_style=False)
 
     def save_image(self):
         if self.current_stage == 0:
@@ -78,6 +87,14 @@ class Controller(object):
             return
         for cell in range(self.data.get_cells()):
             fig = self.data.save_plots(self.current_stage, directory)
+
+    def save_excluded(self):
+        if self.current_stage == 0:
+            return
+        filename = self.view.save_as("dat")
+        if filename is None:
+            return
+        np.savetxt(filename, self.data.get_good_cells(), fmt="%i")
 
 
 # --------------------------- Button click methods --------------------------- #
@@ -122,8 +139,8 @@ class Controller(object):
             self.draw_fig()
         else:
             try:
-                self.data.binarize_slow()
                 self.data.binarize_fast()
+                self.data.binarize_slow()
                 self.current_stage = "binarized"
                 self.draw_fig()
             except ValueError as e:
@@ -199,7 +216,7 @@ class Controller(object):
     def apply_parameters_click(self):
         new_settings = self.__get_values(self.view.entries)
         self.data.import_settings(new_settings)
-        self.data.reset_computations()
+        self.data.reset_computations(self.current_stage)
         self.current_stage = "imported"
         self.draw_fig()
 

@@ -18,13 +18,19 @@ class View(tk.Tk):
 
         menubar = tk.Menu(self)
 
-        filemenu = tk.Menu(menubar, tearoff=0)
+        importmenu = tk.Menu(menubar, tearoff=0)
+        exportmenu = tk.Menu(menubar, tearoff=0)
         editmenu = tk.Menu(menubar, tearoff=0)
 
-        menubar.add_cascade(label="File", menu=filemenu)
-        filemenu.add_command(label="Import data", command=lambda: self.controller.import_data())
-        filemenu.add_command(label="Save image as", command=lambda: self.controller.save_image())
-        filemenu.add_command(label="Save all images", command=lambda: self.controller.save_images())
+        menubar.add_cascade(label="Import", menu=importmenu)
+        importmenu.add_command(label="Import data", command=lambda: self.controller.import_data())
+        importmenu.add_command(label="Import settings", command=lambda: self.controller.import_settings())
+        importmenu.add_command(label="Import excluded", command=lambda: self.controller.import_excluded())
+        menubar.add_cascade(label="Export", menu=exportmenu)
+        exportmenu.add_command(label="Export settings", command=lambda: self.controller.save_settings())
+        exportmenu.add_command(label="Export image", command=lambda: self.controller.save_image())
+        exportmenu.add_command(label="Export all images", command=lambda: self.controller.save_images())
+        exportmenu.add_command(label="Export excluded", command=lambda: self.controller.save_excluded())
         menubar.add_cascade(label="Edit", menu=editmenu)
         editmenu.add_command(label="Settings", command=lambda: self.controller.edit_settings())
 
@@ -55,6 +61,9 @@ class View(tk.Tk):
         previous_button = tk.Button(self.toolbar, text="Previous", command=lambda: self.controller.previous_click())
         previous_button.pack(side=tk.RIGHT)
 
+        self.bind("<Left>", lambda e: self.controller.previous_click())
+        self.bind("<Right>", lambda e: self.controller.next_click())
+
         exclude_button = tk.Button(self.toolbar, text="exclude", command=lambda: self.controller.exclude_click())
         exclude_button.pack(side=tk.RIGHT)
 
@@ -67,15 +76,21 @@ class View(tk.Tk):
     def register(self, controller):
         self.controller = controller
 
+    def open_file(self):
+        filename = filedialog.askopenfilename(title="Select file", filetypes=(("dat files", "*.dat"), ("YAML files", "*.yaml")))
+        if filename == '':
+            return None
+        return filename
+
     def open_directory(self):
         """
         This method displays the file dialog box to open file and returns the
         file name.
         """
-        filename = filedialog.askdirectory()
-        if filename == '':
+        directory = filedialog.askdirectory()
+        if directory == '':
             return None
-        return filename
+        return directory
 
     def save_as(self, extension):
         filename = filedialog.asksaveasfile(mode='w', defaultextension=extension)

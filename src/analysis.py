@@ -20,7 +20,7 @@ class Analysis(object):
         self.__binarized_fast = None
         self.__networks = None
 
-    def add_data(self, data, build_networks=True):
+    def import_data(self, data, positions, build_networks=True):
         self.__build_networks = build_networks
         assert data.is_analyzed()
 
@@ -29,28 +29,29 @@ class Analysis(object):
         start, stop = settings["analysis"]["interval"]
         self.__sampling = settings["sampling"]
         start, stop = start*self.__sampling, stop*self.__sampling
+        good_cells = data.get_good_cells()
 
         self.__slices = settings["network"]["slices"]
 
         self.__points = stop-start
-        self.__cells = data.get_cells()
-        self.__positions = data.get_positions()
+        self.__cells = np.sum(good_cells)
+        self.__positions = positions
 
         # Split filtered data into slices
-        filtered_slow = data.get_filtered_slow().T[start:stop]
+        filtered_slow = data.get_filtered_slow().T[start:stop, good_cells]
         filtered_slow = np.array_split(filtered_slow, self.__slices)
         self.__filtered_slow = [filtered_slow[i].T for i in range(self.__slices)]
 
-        filtered_fast = data.get_filtered_fast().T[start:stop]
+        filtered_fast = data.get_filtered_fast().T[start:stop, good_cells]
         filtered_fast = np.array_split(filtered_fast, self.__slices)
         self.__filtered_fast = [filtered_fast[i].T for i in range(self.__slices)]
 
         # Split binarized data into slices
-        binarized_slow = data.get_binarized_slow().T[start:stop]
+        binarized_slow = data.get_binarized_slow().T[start:stop, good_cells]
         binarized_slow = np.array_split(binarized_slow, self.__slices)
         self.__binarized_slow = [binarized_slow[i].T for i in range(self.__slices)]
 
-        binarized_fast = data.get_binarized_fast().T[start:stop]
+        binarized_fast = data.get_binarized_fast().T[start:stop, good_cells]
         binarized_fast = np.array_split(binarized_fast, self.__slices)
         self.__binarized_fast = [binarized_fast[i].T for i in range(self.__slices)]
 
