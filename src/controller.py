@@ -20,6 +20,8 @@ class Controller(object):
         # 3 = distribute
         # 4 = binarize
 
+# ---------------------------- Menu click methods ---------------------------- #
+
     def import_data(self):
         directory_path = self.view.open_directory()
         if directory_path is None:
@@ -47,11 +49,36 @@ class Controller(object):
                 raise(ValueError("Could not open settings file."))
         try:
             self.data.import_data(series, positions, settings)
-            self.current_stage = 1
+            self.current_stage = "imported"
         except:
             print("Something wrong")
 
         self.draw_fig()
+
+    def edit_settings(self):
+        if self.current_stage == 0:
+            return
+        settings = self.data.get_settings()
+        self.view.open_settings_window(settings)
+
+    def save_image(self):
+        if self.current_stage == 0:
+            return
+        file = self.view.save_as("pdf")
+        if file is None:
+            return
+        fig = self.__get_fig()
+        plt.savefig(file)
+
+    def save_images(self):
+        if self.current_stage == 0:
+            return
+        directory = self.view.open_directory()
+        if directory is None:
+            return
+        for cell in range(self.data.get_cells()):
+            fig = self.data.save_plots(self.current_stage, directory)
+
 
 # --------------------------- Button click methods --------------------------- #
 
@@ -59,12 +86,12 @@ class Controller(object):
         if self.current_stage == 0:
             return
         if self.data.get_filtered_slow() is not False or self.data.get_filtered_fast() is not False:
-            self.current_stage = 2
+            self.current_stage = "filtered"
             self.draw_fig()
         else:
             try:
                 self.data.filter()
-                self.current_stage = 2
+                self.current_stage = "filtered"
                 self.draw_fig()
             except ValueError as e:
                 print(e)
@@ -75,12 +102,12 @@ class Controller(object):
         if self.current_stage == 0:
             return
         elif self.data.get_distributions() is not False:
-            self.current_stage = 3
+            self.current_stage = "distributions"
             self.draw_fig()
         else:
             try:
                 self.data.compute_distributions()
-                self.current_stage = 3
+                self.current_stage = "distributions"
                 self.draw_fig()
             except ValueError as e:
                 print(e)
@@ -91,13 +118,13 @@ class Controller(object):
         if self.current_stage == 0:
             return
         if self.data.get_binarized_slow() is not False or self.data.get_binarized_fast() is not False:
-            self.current_stage = 4
+            self.current_stage = "binarized"
             self.draw_fig()
         else:
             try:
                 self.data.binarize_slow()
                 self.data.binarize_fast()
-                self.current_stage = 4
+                self.current_stage = "binarized"
                 self.draw_fig()
             except ValueError as e:
                 print(e)
@@ -153,31 +180,27 @@ class Controller(object):
             print("Something wrong")
         self.draw_fig()
 
+    def __get_fig(self):
+        if self.current_stage == "imported":
+            return self.data.plot(self.current_number)
+        elif self.current_stage == "filtered":
+            return self.data.plot_filtered(self.current_number)
+        elif self.current_stage == "distributions":
+            return self.data.plot_distributions(self.current_number)
+        elif self.current_stage == "binarized":
+            return self.data.plot_binarized(self.current_number)
 
     def draw_fig(self):
         if self.current_stage == 0:
             return
         plt.close()
-        if self.current_stage == 1:
-            self.view.draw_fig(self.data.plot(self.current_number))
-        elif self.current_stage == 2:
-            self.view.draw_fig(self.data.plot_filtered(self.current_number))
-        elif self.current_stage == 3:
-            self.view.draw_fig(self.data.plot_distributions(self.current_number))
-        elif self.current_stage == 4:
-            self.view.draw_fig(self.data.plot_binarized(self.current_number))
-
-    def edit_settings(self):
-        if self.current_stage == 0:
-            return
-        settings = self.data.get_settings()
-        self.view.open_settings_window(settings)
+        self.view.draw_fig(self.__get_fig())
 
     def apply_parameters_click(self):
         new_settings = self.__get_values(self.view.entries)
         self.data.import_settings(new_settings)
         self.data.reset_computations()
-        self.current_stage = 1
+        self.current_stage = "imported"
         self.draw_fig()
 
     def __get_values(self, parameter):

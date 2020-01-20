@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import colorConverter
 
+EXCLUDE_COLOR = 'xkcd:salmon'
+
 class Data(object):
     """
     A class for signal analysis.
@@ -138,16 +140,19 @@ class Data(object):
         mean = np.mean(self.__signal[i])
 
         fig, (ax1, ax2) = plt.subplots(2)
-        ax1.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
-        ax1.plot(self.__time, self.__filtered_slow[i], linewidth=2, color='blue')
-        ax1.set_xlabel("Time [s]")
-        ax1.set_ylabel("Amplitude (slow)")
+        if not self.__good_cells[i]:
+            ax1.set_facecolor(EXCLUDE_COLOR)
+        fig.suptitle("Filtered data ({0})".format("keep" if self.__good_cells[i] else "exclude"))
 
-        ax2.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
-        ax2.plot(self.__time, self.__filtered_fast[i], linewidth=0.5, color='red')
-        ax2.set_xlim(self.__settings["filter"]["plot"])
+        ax1.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey', alpha=0.5)
+        ax1.plot(self.__time, self.__filtered_fast[i], linewidth=0.5, color='red')
+        ax1.set_xlim(self.__settings["filter"]["plot"])
+        ax1.set_ylabel("Amplitude (fast)")
+
+        ax2.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey', alpha=0.5)
+        ax2.plot(self.__time, self.__filtered_slow[i], linewidth=2, color='blue')
         ax2.set_xlabel("Time [s]")
-        ax2.set_ylabel("Amplitude (fast)")
+        ax2.set_ylabel("Amplitude (slow)")
 
         return fig
 
@@ -210,28 +215,28 @@ class Data(object):
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
         if self.__good_cells[i] == False:
-            ax1.set_facecolor('xkcd:salmon')
-            fig.suptitle("Score = {0:.2f} ({1})".format(score, "EXCLUDE"))
+            ax1.set_facecolor(EXCLUDE_COLOR)
+            fig.suptitle("Score = {0:.2f} ({1})".format(score, "exclude"))
         else:
-            fig.suptitle("Score = {0:.2f} ({1})".format(score, "KEEP"))
+            fig.suptitle("Score = {0:.2f} ({1})".format(score, "keep"))
 
         mean = np.mean(self.__signal[i])
-        ax1.plot(self.__time, self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0)
+        ax1.plot(self.__time, self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0, alpha=0.5)
         ax1.plot(self.__time, self.__filtered_fast[i],linewidth=0.5,color='red', zorder=2)
-        ax1.plot(self.__time, [p_root for i in self.__time], color="green", zorder=2)
-        ax1.axvline(x=self.__settings["analysis"]["interval"][0])
-        ax1.axvline(x=self.__settings["analysis"]["interval"][1])
+        ax1.plot(self.__time, [p_root for i in self.__time], color="k", zorder=2)
+        # ax1.axvline(x=self.__settings["analysis"]["interval"][0], color="k")
+        # ax1.axvline(x=self.__settings["analysis"]["interval"][1], color="k")
         if q_root is not np.inf:
-            ax1.fill_between(self.__time, -q_root, q_root, color='orange', zorder=1)
+            ax1.fill_between(self.__time, -q_root, q_root, color=EXCLUDE_COLOR, zorder=1, alpha=0.5)
         ax1.set_xlabel("Time [s]")
         ax1.set_ylabel("Amplitude")
 
-        ax2.bar(x, hist, max(x)/len(x), log=True)
-        ax2.plot(x, np.exp(p(x)), color="k")
-        ax2.plot(p_root, np.exp(p(p_root)), marker="o", color="green")
+        ax2.bar(x, hist, max(x)/len(x)*0.8, log=True, color="dimgrey", alpha=0.5)
+        ax2.plot(x, np.exp(p(x)), color="red")
+        ax2.plot(p_root, np.exp(p(p_root)), marker="o", color="k")
         if q_root != np.inf:
-            ax2.plot(np.linspace(0,q_root,10), np.exp(q(np.linspace(0,q_root,10))), color="orange")
-            ax2.plot(q_root, np.exp(q(q_root)), marker="o", color="orange")
+            ax2.plot(np.linspace(0,q_root,10), np.exp(q(np.linspace(0,q_root,10))), color=EXCLUDE_COLOR)
+            ax2.plot(q_root, np.exp(q(q_root)), marker="o", color=EXCLUDE_COLOR)
         ax2.set_xlabel("Signal height h")
         ax2.set_ylabel("Data points N")
 
@@ -307,7 +312,9 @@ class Data(object):
             raise ValueError("No binarized data!")
 
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-        fig.suptitle("Binarized data")
+        if not self.__good_cells[i]:
+            ax1.set_facecolor(EXCLUDE_COLOR)
+        fig.suptitle("Binarized data ({0})".format("keep" if self.__good_cells[i] else "exclude"))
 
         mean = np.mean(self.__signal[i])
         max_signal = max(abs(self.__signal[i]-mean))
@@ -337,10 +344,10 @@ class Data(object):
         return fig
 
     def save_plots(self, type, directory):
-        if type not in ("raw", "filtered", "distributions", "binarized"):
+        if type not in ("imported", "filtered", "distributions", "binarized"):
             raise ValueError("Unknown 'type' argument.")
         for i in range(self.__cells):
-            if type == "raw":
+            if type == "imported":
                 fig = self.plot(i)
             elif type == "filtered":
                 fig = self.plot_filtered(i)

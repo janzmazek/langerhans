@@ -23,7 +23,8 @@ class View(tk.Tk):
 
         menubar.add_cascade(label="File", menu=filemenu)
         filemenu.add_command(label="Import data", command=lambda: self.controller.import_data())
-        filemenu.add_command(label="Save data", command=lambda: 0)
+        filemenu.add_command(label="Save image as", command=lambda: self.controller.save_image())
+        filemenu.add_command(label="Save all images", command=lambda: self.controller.save_images())
         menubar.add_cascade(label="Edit", menu=editmenu)
         editmenu.add_command(label="Settings", command=lambda: self.controller.edit_settings())
 
@@ -75,6 +76,12 @@ class View(tk.Tk):
         if filename == '':
             return None
         return filename
+
+    def save_as(self, extension):
+        filename = filedialog.asksaveasfile(mode='w', defaultextension=extension)
+        if filename is None:
+            return None
+        return filename.name
 
     def draw_fig(self, fig):
         if self.canvas is not False:
