@@ -60,11 +60,10 @@ class Data(object):
         self.__good_cells = False
 
 # --------------------------------- IMPORTS ---------------------------------- #
-    def import_settings(self, settings):
-        self.__settings = settings
-
-    def import_data(self, series):
-        self.__signal = series[:,1:].transpose()
+    def import_data(self, signal):
+        if not len(signal.shape)==2:
+            raise ValueError("Signal shape not 2x2.")
+        self.__signal = signal[:,1:].transpose()
         if self.__settings is False:
             self.__settings = SAMPLE_SETTINGS
         sampling = self.__settings["sampling"]
@@ -75,15 +74,21 @@ class Data(object):
 
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
+    def import_settings(self, settings):
+        if not "sampling" in settings and not "filter" in settings and not "exclude" in settings:
+            raise ValueError("Bad keys in settings.")
+        if not "slow" in settings["filter"] and not "fast" in settings["filter"] and not "plot" in settings["filter"]:
+            raise ValueError("Bad keys in settings[filter].")
+        if not "score_threshold" in settings["exclude"] and not "spikes_threshold" in settings["exclude"]:
+            raise ValueError("Bad keys in settings[exclude].")
+        self.__settings = settings
+
     def import_excluded(self, cells):
         if self.__signal is False:
             raise ValueError("No imported data!")
         if len(cells) != self.__cells:
             raise ValueError("Cell number does not match.")
         self.__good_cells = cells
-
-    def import_settings(self, settings):
-        self.__settings = settings
 
     def reset_computations(self, stage):
         self.__filtered_slow = False

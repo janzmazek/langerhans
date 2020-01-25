@@ -7,8 +7,8 @@ class Networks(object):
     """docstring for Networks."""
 
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, settings, cells, filtered_slow, filtered_fast):
-        self.__settings = settings
+    def __init__(self, cells, filtered_slow, filtered_fast, ND_avg=7):
+        self.__ND_avg = ND_avg
         self.__cells = cells
         self.__filtered_slow = filtered_slow
         self.__filtered_fast = filtered_fast
@@ -42,7 +42,7 @@ class Networks(object):
     def __f(self, filtered, threshold):
         G = self.__construct_network(filtered, threshold)
         average_degree = np.mean([G.degree[i] for i in G])
-        return average_degree-self.__settings["network"]["average_degree"]
+        return average_degree-self.__ND_avg
 
     def __construct_network(self, filtered, threshold):
         correlation_matrix = np.eye(self.__cells)

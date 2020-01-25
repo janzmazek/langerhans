@@ -8,7 +8,6 @@ class Analysis(object):
 
 # ------------------------------- INITIALIZER -------------------------------- #
     def __init__(self):
-        self.__build_networks = None
         self.__sampling = None
         self.__slices = None
         self.__points = None
@@ -18,10 +17,10 @@ class Analysis(object):
         self.__filtered_fast = None
         self.__binarized_slow = None
         self.__binarized_fast = None
-        self.__networks = None
 
-    def import_data(self, data, positions, build_networks=True):
-        self.__build_networks = build_networks
+        self.__networks = False
+
+    def import_data(self, data, positions):
         assert data.is_analyzed()
 
         # Get settings from data object
@@ -55,10 +54,11 @@ class Analysis(object):
         binarized_fast = np.array_split(binarized_fast, self.__slices)
         self.__binarized_fast = [binarized_fast[i].T for i in range(self.__slices)]
 
-        if self.__build_networks:
-            # Construct networks and build networks from sliced data
-            self.__networks = Networks(settings, self.__cells, self.__filtered_slow, self.__filtered_fast)
-            self.__networks.build_networks()
+    def build_networks(self):
+        # Construct networks and build networks from sliced data
+        self.__networks = Networks(self.__cells, self.__filtered_slow, self.__filtered_fast)
+        self.__networks.build_networks()
+
 
 # ---------------------------- ANALYSIS FUNCTIONS ---------------------------- #
     def __search_sequence(self, arr, seq):
@@ -83,37 +83,20 @@ class Analysis(object):
     def draw_networks(self, location):
         self.__networks.draw_networks(self.__positions, location)
 
-    def print_average_frequency(self):
-        fast = []
-        for slice in range(self.__slices):
-            for cell in range(self.__cells):
-                (s, f) = self.__frequency(slice, cell)
-                fast.append(f)
-        print(np.mean(fast))
-
-    def print_active_time(self):
-        at = []
-        for slice in range(self.__slices):
-            for cell in range(self.__cells):
-                active_time = self.__active_time(slice, cell)
-                at.append(active_time)
-        print(np.mean(at))
-
-
     def compute_parameters(self):
-        if self.__build_networks:
+        if self.__networks is not False:
             G_slow = self.__networks.get_G_slow()
             G_fast = self.__networks.get_G_fast()
 
         par = [[dict() for c in range(self.__cells)] for s in range(self.__slices)]
         for slice in range(self.__slices):
             for cell in range(self.__cells):
-                par[slice][cell]["AT"] = self.__active_time(slice, cell)
-                par[slice][cell]["Fs"] = self.__frequency(slice, cell)[0]
-                par[slice][cell]["Ff"] = self.__frequency(slice, cell)[1]
-                par[slice][cell]["ISI"] = self.__interspike_variation(slice, cell)[0]
-                par[slice][cell]["ISIV"] = self.__interspike_variation(slice, cell)[1]
-                if self.__build_networks:
+                par[slice][cell]["AT"] = self.active_time(slice, cell)
+                par[slice][cell]["Fs"] = self.frequency(slice, cell)[0]
+                par[slice][cell]["Ff"] = self.frequency(slice, cell)[1]
+                par[slice][cell]["ISI"] = self.interspike_variation(slice, cell)[0]
+                par[slice][cell]["ISIV"] = self.interspike_variation(slice, cell)[1]
+                if self.__networks is not False:
                     par[slice][cell]["NDs"] = self.__networks.node_degree(slice, cell)[0]
                     par[slice][cell]["NDf"] = self.__networks.node_degree(slice, cell)[1]
                     par[slice][cell]["Cs"] = self.__networks.clustering(slice, cell)[0]
@@ -123,11 +106,11 @@ class Analysis(object):
 
         return par
 
-    def __active_time(self, slice, cell):
+    def active_time(self, slice, cell):
         bin = self.__binarized_fast[slice][cell]
         return np.sum(bin)/bin.size
 
-    def __frequency(self, slice, cell):
+    def frequency(self, slice, cell):
         bin_slow = self.__binarized_slow[slice][cell]
         bin_fast = self.__binarized_fast[slice][cell]
 
@@ -147,7 +130,7 @@ class Analysis(object):
 
         return (frequency_slow, frequency_fast)
 
-    def __interspike_variation(self, slice, cell):
+    def interspike_variation(self, slice, cell):
         bin_fast = self.__binarized_fast[slice][cell]
 
         interspike_start = self.__search_sequence(bin_fast, [1,0])
@@ -172,36 +155,22 @@ class Analysis(object):
 
         return (mean_interspike_interval, interspike_variation)
 
-    def plot_analysis(self, directory):
-        for slice in range(self.__slices):
-            par_values = self.compute_parameters()
-            pars = ("NDs", "NDf", "Cs", "Cf", "NNDs", "NNDf", "AT", "Fs", "Ff", "ISI", "ISIV")
+    def node_degree(self, slice, cell):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.node_degree(slice, cell)
 
-            fig, ax = plt.subplots(len(pars), len(pars), figsize=(75, 75))
-            for p1 in range(len(pars)):
-                for p2 in range(p1+1):
-                    x = np.array([par_values[slice][c][pars[p1]] for c in range(self.__cells)])
-                    y = np.array([par_values[slice][c][pars[p2]] for c in range(self.__cells)])
+    def clustering(self, slice, cell):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.clustering(slice, cell)
 
-                    both_not_None = np.logical_and(x != None, y != None)
-                    x = x[both_not_None].astype(float)
-                    y = y[both_not_None].astype(float)
+    def clustering(self, slice, cell):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.nearest_neighbour_degree(slice, cell)
 
-                    correlation = np.corrcoef(x, y)[0,1]
-
-                    ax[p1,p2].scatter(x, y)
-                    ax[p1,p2].set_title("Correlation: {0}".format(correlation))
-                    ax[p1,p2].set_xlabel(pars[p1])
-                    ax[p1,p2].set_ylabel(pars[p2])
-
-                    ax[p2,p1].scatter(y, x)
-                    ax[p2,p1].set_title("Correlation: {0}".format(correlation))
-                    ax[p2,p1].set_xlabel(pars[p2])
-                    ax[p2,p1].set_ylabel(pars[p1])
-            plt.savefig("{0}/{1}.pdf".format(directory, slice), dpi=200, bbox_inches='tight')
-            plt.close()
-
-    def compare_slow_fast(self, plot=True):
+    def spikes_vs_phase(self):
         phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
         spikes = np.zeros(12)
         for phase in range(1,13):
@@ -217,17 +186,9 @@ class Analysis(object):
                     fast_isolated_unitized = np.logical_and(slow_isolated, fast_unitized)
 
                     spikes[phase-1] += np.sum(fast_isolated_unitized)
-
-        if plot:
-            norm_spikes = spikes/np.max(spikes)
-            colors = plt.cm.seismic(norm_spikes)
-            ax = plt.subplot(111, projection="polar")
-            ax.bar(phases, norm_spikes, width=2*np.pi/12, bottom=0.0, color=colors)
-            plt.show()
-
         return (phases, spikes)
 
-    def compare_correlation_distance(self, plot=True):
+    def correlation_vs_distance(self):
         distances = []
         correlations_slow = [[] for s in range(self.__slices)]
         correlations_fast = [[] for s in range(self.__slices)]
@@ -245,12 +206,4 @@ class Analysis(object):
                                             self.__filtered_fast[slice][cell2])[0,1]
                     correlations_slow[slice].append(corr_slow)
                     correlations_fast[slice].append(corr_fast)
-
-        if plot:
-            fig, ax = plt.subplots(self.__slices)
-            for slice in range(self.__slices):
-                ax[slice].scatter(distances, correlations_slow[slice])
-                ax[slice].scatter(distances, correlations_fast[slice])
-            plt.show()
-
         return (distances, correlations_slow, correlations_fast)

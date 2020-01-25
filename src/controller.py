@@ -20,14 +20,15 @@ class Controller(object):
         filename = self.view.open_file()
         if filename is None:
             return
-        series = np.loadtxt(filename)[:-1,:]
         try:
+            series = np.loadtxt(filename)[:-1,:]
             self.data.import_data(series)
             self.current_stage = "imported"
+            self.draw_fig()
+        except ValueError as e:
+            print(e)
         except:
             print("Something wrong")
-
-        self.draw_fig()
 
     def import_settings(self):
         filename = self.view.open_file()
@@ -38,11 +39,14 @@ class Controller(object):
                 settings = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
                 raise(ValueError("Could not open settings file."))
-        self.data.import_settings(settings)
-        self.data.reset_computations(self.current_stage)
-        if self.current_stage is not 0:
-            self.current_stage = "imported"
-        self.draw_fig()
+        try:
+            self.data.import_settings(settings)
+            self.data.reset_computations(self.current_stage)
+            if self.current_stage is not 0:
+                self.current_stage = "imported"
+            self.draw_fig()
+        except ValueError as e:
+            print(e)
 
     def import_excluded(self):
         if self.current_stage == 0:
@@ -53,9 +57,9 @@ class Controller(object):
         try:
             good_cells = np.loadtxt(filename, dtype=bool)
             self.data.import_excluded(good_cells)
+            self.draw_fig()
         except ValueError as e:
             print(e)
-        self.draw_fig()
 
     def edit_settings(self):
         if self.current_stage == 0:
@@ -67,6 +71,8 @@ class Controller(object):
         if self.data.get_settings() is False:
             return
         filename = self.view.save_as("yaml")
+        if filename is None:
+            return
         with open(filename, "w") as outfile:
             yaml.dump(self.data.get_settings(), outfile, default_flow_style=False)
 
