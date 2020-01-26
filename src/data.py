@@ -1,42 +1,30 @@
 import numpy as np
 
-from scipy import stats
 from scipy.signal import butter, sosfiltfilt, ricker, cwt, correlate, savgol_filter
 from scipy.optimize import curve_fit, differential_evolution
-import scipy.fftpack
 
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from matplotlib.colors import colorConverter
 
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
-    "sampling": 10,
-    "filter":
+    "Sampling [Hz]": 10,
+    "Filter":
         {
-        "slow": [0.001, 0.005],
-        "fast": [0.04, 0.4],
-        "plot": [250, 1750]
+        "Slow [Hz]": [0.001, 0.005],
+        "Fast [Hz]": [0.04, 0.4],
+        "Plot [s]": [250, 1750]
         },
-    "smooth":
+    # "smooth":
+    #     {
+    #     "points": 51,
+    #     "order": 5
+    #     },
+    "Distribution order": 5,
+    "Exclude":
         {
-        "points": 51,
-        "order": 5
-        },
-    "distribution_order": 5,
-    "exclude":
-        {
-        "score_threshold": 1.5,
-        "spikes_threshold": 0.01
-        },
-    "analysis":
-        {
-        "interval": [600, 2900]
-        },
-    "network":
-        {
-        "average_degree": 7,
-        "slices": 1
+        "Score threshold": 1.5,
+        "Spikes threshold": 0.01
         }
     }
 
@@ -67,7 +55,7 @@ class Data(object):
         self.__signal = signal[:,1:].transpose()
         if self.__settings is False:
             self.__settings = SAMPLE_SETTINGS
-        sampling = self.__settings["sampling"]
+        sampling = self.__settings["Sampling [Hz]"]
         self.__time = np.arange(len(self.__signal[0]))*(1/sampling)
 
         self.__points = len(self.__time)
@@ -76,11 +64,11 @@ class Data(object):
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
     def import_settings(self, settings):
-        if not "sampling" in settings and not "filter" in settings and not "exclude" in settings:
+        if not "Sampling [Hz]" in settings and not "Filter" in settings and not "Exclude" in settings:
             raise ValueError("Bad keys in settings.")
-        if not "slow" in settings["filter"] and not "fast" in settings["filter"] and not "plot" in settings["filter"]:
+        if not "Slow [Hz]" in settings["Filter"] and not "Fast [Hz]" in settings["Filter"] and not "Plot [s]" in settings["Filter"]:
             raise ValueError("Bad keys in settings[filter].")
-        if not "score_threshold" in settings["exclude"] and not "spikes_threshold" in settings["exclude"]:
+        if not "Score threshold" in settings["Exclude"] and not "Spikes threshold" in settings["Exclude"]:
             raise ValueError("Bad keys in settings[exclude].")
         self.__settings = settings
 
@@ -126,7 +114,7 @@ class Data(object):
 
         fig, ax = plt.subplots()
         ax.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
-        ax.set_xlim(self.__settings["filter"]["plot"])
+        ax.set_xlim(self.__settings["Filter"]["Plot [s]"])
         ax.set_xlabel("Time [s]")
         ax.set_ylabel("Amplitude")
 
@@ -135,7 +123,7 @@ class Data(object):
     def filter(self):
         if self.__signal is False:
             raise ValueError("No imported data!")
-        slow, fast = self.__settings["filter"]["slow"], self.__settings["filter"]["fast"]
+        slow, fast = self.__settings["Filter"]["Slow [Hz]"], self.__settings["Filter"]["Fast [Hz]"]
         self.__filtered_slow = np.zeros((self.__cells, self.__points))
         self.__filtered_fast = np.zeros((self.__cells, self.__points))
 
@@ -144,7 +132,7 @@ class Data(object):
             self.__filtered_fast[i] = self.__bandpass(self.__signal[i], (*fast))
 
     def __bandpass(self, data, lowcut, highcut, order=5):
-        nyq = 0.5*self.__settings["sampling"]
+        nyq = 0.5*self.__settings["Sampling [Hz]"]
         low = lowcut / nyq
         high = highcut / nyq
         sos = butter(order, [low, high], analog=False, btype='band', output='sos')
@@ -170,7 +158,7 @@ class Data(object):
 
         ax1.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey', alpha=0.5)
         ax1.plot(self.__time, self.__filtered_fast[i], linewidth=0.5, color='red')
-        ax1.set_xlim(self.__settings["filter"]["plot"])
+        ax1.set_xlim(self.__settings["Filter"]["Plot [s]"])
         ax1.set_ylabel("Amplitude (fast)")
 
         ax2.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey', alpha=0.5)
@@ -196,7 +184,7 @@ class Data(object):
             x = (bins[1:] + bins[:-1])/2 # middle points of bins
 
             # Fit polynomial of nth order
-            order = self.__settings["distribution_order"]
+            order = self.__settings["Distribution order"]
             z = np.polyfit(x, np.log(cumulative_hist), order, w=np.sqrt(cumulative_hist))
             p = np.poly1d(z)
 
@@ -248,11 +236,12 @@ class Data(object):
         ax1.plot(self.__time, self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0, alpha=0.5)
         ax1.plot(self.__time, self.__filtered_fast[i],linewidth=0.5,color='red', zorder=2)
         ax1.plot(self.__time, [p_root for i in self.__time], color="k", zorder=2)
-        # ax1.axvline(x=self.__settings["analysis"]["interval"][0], color="k")
-        # ax1.axvline(x=self.__settings["analysis"]["interval"][1], color="k")
         if q_root is not np.inf:
             ax1.fill_between(self.__time, -q_root, q_root, color=EXCLUDE_COLOR, zorder=1, alpha=0.5)
+
+        ax1.xaxis.tick_top()
         ax1.set_xlabel("Time [s]")
+        ax1.xaxis.set_label_position('top')
         ax1.set_ylabel("Amplitude")
 
         ax2.bar(x, hist, max(x)/len(x)*0.8, log=True, color="dimgrey", alpha=0.5)
@@ -271,8 +260,8 @@ class Data(object):
         if self.__distributions is False:
             raise ValueError("No distributions.")
         # Excluding thresholds
-        score_threshold = self.__settings["exclude"]["score_threshold"]
-        spikes_threshold = self.__settings["exclude"]["spikes_threshold"]
+        score_threshold = self.__settings["Exclude"]["Score threshold"]
+        spikes_threshold = self.__settings["Exclude"]["Spikes threshold"]
 
         for cell in range(self.__cells):
             p = self.__distributions[cell]["p"]
@@ -301,8 +290,6 @@ class Data(object):
             threshold = self.__distributions[cell]["p_root"]
             self.__binarized_fast[cell] = np.where(self.__filtered_fast[cell]>threshold, 1, 0)
             self.__binarized_fast = self.__binarized_fast.astype(int)
-
-        self.compute_activity()
 
     def binarize_slow(self):
         if self.__filtered_slow is False:
@@ -333,7 +320,7 @@ class Data(object):
             self.__binarized_slow[cell, extremes[-1]:] = 0
             self.__binarized_slow = self.__binarized_slow.astype(int)
 
-    def compute_activity(self):
+    def autolimit(self):
         if self.__binarized_fast is False:
             raise ValueError("No binarized data.")
         print("Computing activity...")
@@ -368,9 +355,10 @@ class Data(object):
         ax1.plot(self.__time, self.__binarized_fast[cell]*threshold, linewidth=0.75, color='black')
         ax1.set_ylabel("Amplitude")
 
-        border = self.__activity[cell]
-        ax1.axvspan(0, border[0], alpha=0.5, color=EXCLUDE_COLOR)
-        ax1.axvspan(border[1], self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
+        if self.__activity is not False:
+            border = self.__activity[cell]
+            ax1.axvspan(0, border[0], alpha=0.5, color=EXCLUDE_COLOR)
+            ax1.axvspan(border[1], self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
 
         ax3 = ax1.twinx()
         ax3.set_ylabel("Action potentials")
@@ -402,14 +390,6 @@ class Data(object):
             plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
             plt.close()
 
-    # def compute_time_distributions(self):
-    #     if self.__binarized_fast is False:
-    #         raise ValueError("No binarized data.")
-    #     for cell in range(self.__cells):
-    #         binarized = self.__binarized_fast[cell]
-    #         hist = np.histogram(binarized, 50)
-
-
     def is_analyzed(self):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             return False
@@ -418,6 +398,8 @@ class Data(object):
         elif self.__binarized_slow is False or self.__binarized_fast is False:
             return False
         elif self.__good_cells is False:
+            return False
+        elif self.__activity is False:
             return False
         else:
             return True

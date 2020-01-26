@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import yaml
+import pickle
 import matplotlib.pyplot as plt
 
 class Controller(object):
@@ -27,8 +28,6 @@ class Controller(object):
             self.draw_fig()
         except ValueError as e:
             print(e)
-        except:
-            print("Something wrong")
 
     def import_settings(self):
         filename = self.view.open_file()
@@ -97,11 +96,21 @@ class Controller(object):
     def save_excluded(self):
         if self.current_stage == 0:
             return
+        if self.data.get_excluded() is False:
+            return
         filename = self.view.save_as("dat")
         if filename is None:
             return
         np.savetxt(filename, self.data.get_good_cells(), fmt="%i")
 
+    def save_object(self):
+        if not self.data.is_analyzed():
+            return
+        filename = self.view.save_as("pkl")
+        if filename is None:
+            return
+        with open(filename, "wb") as output:
+            pickle.dump(self.data, output, pickle.HIGHEST_PROTOCOL)
 
 # --------------------------- Button click methods --------------------------- #
 
@@ -118,8 +127,6 @@ class Controller(object):
                 self.draw_fig()
             except ValueError as e:
                 print(e)
-            except:
-                print("Something wrong")
 
     def distributions_click(self):
         if self.current_stage == 0:
@@ -134,8 +141,6 @@ class Controller(object):
                 self.draw_fig()
             except ValueError as e:
                 print(e)
-            except:
-                print("Something wrong")
 
     def binarize_click(self):
         if self.current_stage == 0:
@@ -151,8 +156,6 @@ class Controller(object):
                 self.draw_fig()
             except ValueError as e:
                 print(e)
-            except:
-                print("Something wrong")
 
     def previous_click(self):
         if self.current_stage == 0:
@@ -177,8 +180,6 @@ class Controller(object):
             self.data.exclude(self.current_number)
         except ValueError as e:
             print(e)
-        except:
-            print("Something wrong")
         self.draw_fig()
 
     def unexclude_click(self):
@@ -188,8 +189,6 @@ class Controller(object):
             self.data.unexclude(self.current_number)
         except ValueError as e:
             print(e)
-        except:
-            print("Something wrong")
         self.draw_fig()
 
     def autoexclude_click(self):
@@ -199,8 +198,15 @@ class Controller(object):
             self.data.autoexclude()
         except ValueError as e:
             print(e)
-        except:
-            print("Something wrong")
+        self.draw_fig()
+
+    def autolimit_click(self):
+        if self.current_stage == 0:
+            return
+        try:
+            self.data.autolimit()
+        except ValueError as e:
+            print(e)
         self.draw_fig()
 
     def __get_fig(self):

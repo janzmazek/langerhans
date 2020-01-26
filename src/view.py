@@ -31,6 +31,7 @@ class View(tk.Tk):
         exportmenu.add_command(label="Export image", command=lambda: self.controller.save_image())
         exportmenu.add_command(label="Export all images", command=lambda: self.controller.save_images())
         exportmenu.add_command(label="Export excluded", command=lambda: self.controller.save_excluded())
+        exportmenu.add_command(label="Export object (pickle)", command=lambda: self.controller.save_object())
         menubar.add_cascade(label="Edit", menu=editmenu)
         editmenu.add_command(label="Settings", command=lambda: self.controller.edit_settings())
 
@@ -51,6 +52,9 @@ class View(tk.Tk):
 
         autoexclude_button = tk.Button(self.toolbar, text="Autoexclude", command=lambda: self.controller.autoexclude_click())
         autoexclude_button.pack(side=tk.LEFT)
+
+        autolimit_button = tk.Button(self.toolbar, text="Autolimit", command=lambda: self.controller.autolimit_click())
+        autolimit_button.pack(side=tk.LEFT)
 
         next_button = tk.Button(self.toolbar, text="Next", command=lambda: self.controller.next_click())
         next_button.pack(side=tk.RIGHT)

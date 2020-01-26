@@ -31,7 +31,7 @@ class Analysis(object):
         self.__points = data.get_points()
         self.__positions = positions
         self.__cells = np.sum(good_cells)
-        self.__sampling = settings["sampling"]
+        self.__sampling = settings["Sampling [Hz]"]
 
         self.__filtered_slow = data.get_filtered_slow()[good_cells]
         self.__filtered_fast = data.get_filtered_fast()[good_cells]
@@ -85,10 +85,11 @@ class Analysis(object):
         par2 = dict()
 
         if self.__networks is not False:
-            par2["Rs"] = self.__networks.average_correlation()[0]
-            par2["Rf"] = self.__networks.average_correlation()[1]
+            par2["Rs"] = self.average_correlation()[0]
+            par2["Rf"] = self.average_correlation()[1]
         for cell in range(self.__cells):
-            par1[cell]["AT"] = self.active_time(cell)
+            par1[cell]["AD"] = self.activity(cell)[0]
+            par1[cell]["AT"] = self.activity(cell)[1]
             par1[cell]["Fs"] = self.frequency(cell)[0]
             par1[cell]["Ff"] = self.frequency(cell)[1]
             par1[cell]["ISI"] = self.interspike_variation(cell)[0]
@@ -103,12 +104,18 @@ class Analysis(object):
 
         return (par1, par2)
 
-    def active_time(self, cell):
+    def average_correlation(self):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.average_correlation()
+
+    def activity(self, cell):
         bin = self.__binarized_fast[cell]
         sum = np.sum(bin)
+        length = bin.size
         if sum == 0:
-            return np.nan
-        return np.sum(bin)/bin.size
+            return (length, np.nan)
+        return (length, sum/length)
 
     def frequency(self, cell):
         bin_slow = self.__binarized_slow[cell]
@@ -165,7 +172,7 @@ class Analysis(object):
             raise ValueError("Network is not built.")
         return self.__networks.clustering(cell)
 
-    def clustering(self, cell):
+    def nearest_neighbour_degree(self, cell):
         if self.__networks is False:
             raise ValueError("Network is not built.")
         return self.__networks.nearest_neighbour_degree(cell)
