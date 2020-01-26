@@ -26,6 +26,7 @@ class View(tk.Tk):
         importmenu.add_command(label="Import data", command=lambda: self.controller.import_data())
         importmenu.add_command(label="Import settings", command=lambda: self.controller.import_settings())
         importmenu.add_command(label="Import excluded", command=lambda: self.controller.import_excluded())
+        importmenu.add_command(label="Import object (pickle)", command=lambda: self.controller.import_object())
         menubar.add_cascade(label="Export", menu=exportmenu)
         exportmenu.add_command(label="Export settings", command=lambda: self.controller.save_settings())
         exportmenu.add_command(label="Export image", command=lambda: self.controller.save_image())
@@ -81,7 +82,7 @@ class View(tk.Tk):
         self.controller = controller
 
     def open_file(self):
-        filename = filedialog.askopenfilename(title="Select file", filetypes=(("dat files", "*.dat"), ("YAML files", "*.yaml")))
+        filename = filedialog.askopenfilename(title="Select file", filetypes=(("dat files", "*.dat"), ("YAML files", "*.yaml"), ("pickle files", "*.pkl")))
         if filename == '':
             return None
         return filename

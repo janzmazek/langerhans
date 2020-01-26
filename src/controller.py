@@ -10,6 +10,7 @@ class Controller(object):
     def __init__(self, data, view):
         self.data = data
         self.view = view
+        self.analysis = False
 
         self.view.register(self)
 
@@ -59,6 +60,18 @@ class Controller(object):
             self.draw_fig()
         except ValueError as e:
             print(e)
+
+    def import_object(self):
+        filename = self.view.open_file()
+        if filename is None:
+            return
+        try:
+            with open(filename, 'rb') as input:
+                self.data = pickle.load(input)
+        except:
+            print("Unsuccessful.")
+        self.current_stage = "imported"
+        self.draw_fig()
 
     def edit_settings(self):
         if self.current_stage == 0:
@@ -202,6 +215,8 @@ class Controller(object):
 
     def autolimit_click(self):
         if self.current_stage == 0:
+            return
+        if self.data.get_activity is not False:
             return
         try:
             self.data.autolimit()
