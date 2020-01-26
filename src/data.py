@@ -2,7 +2,7 @@ import numpy as np
 
 from scipy import stats
 from scipy.signal import butter, sosfiltfilt, ricker, cwt, correlate, savgol_filter
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, differential_evolution
 import scipy.fftpack
 
 import matplotlib.pyplot as plt
@@ -57,6 +57,7 @@ class Data(object):
         self.__distributions = False
         self.__binarized_slow = False
         self.__binarized_fast = False
+        self.__activity = False
         self.__good_cells = False
 
 # --------------------------------- IMPORTS ---------------------------------- #
@@ -96,6 +97,7 @@ class Data(object):
         self.__distributions = False
         self.__binarized_slow = False
         self.__binarized_fast = False
+        self.__activity = False
         if stage is not 0:
             self.__good_cells = np.ones(self.__cells, dtype="bool")
 
@@ -111,6 +113,7 @@ class Data(object):
     def get_distributions(self): return self.__distributions
     def get_binarized_slow(self): return self.__binarized_slow
     def get_binarized_fast(self): return self.__binarized_fast
+    def get_activity(self): return self.__activity
     def get_good_cells(self): return self.__good_cells
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
@@ -148,14 +151,10 @@ class Data(object):
         y = sosfiltfilt(sos, data)
         return y
 
-    def smooth_fast(self):
-        points = self.__settings["smooth"]["points"]
-        order = self.__settings["smooth"]["order"]
-        if self.__filtered_fast is False:
-            raise ValueError("No filtered data")
-        self.__smoothed_fast = np.zeros((self.__cells, self.__points))
-        for i in range(self.__cells):
-            self.__filtered_fast[i] = savgol_filter(self.__filtered_fast[i], points, order)
+    # def smooth(self, data):
+    #     points = self.__settings["smooth"]["points"]
+    #     order = self.__settings["smooth"]["order"]
+    #     return savgol_filter(data, points, order)
 
     def plot_filtered(self, i):
         if self.__filtered_slow is False or self.__filtered_fast is False:
@@ -303,6 +302,8 @@ class Data(object):
             self.__binarized_fast[cell] = np.where(self.__filtered_fast[cell]>threshold, 1, 0)
             self.__binarized_fast = self.__binarized_fast.astype(int)
 
+        self.compute_activity()
+
     def binarize_slow(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
@@ -332,34 +333,52 @@ class Data(object):
             self.__binarized_slow[cell, extremes[-1]:] = 0
             self.__binarized_slow = self.__binarized_slow.astype(int)
 
-    def plot_binarized(self, i):
+    def compute_activity(self):
+        if self.__binarized_fast is False:
+            raise ValueError("No binarized data.")
+        print("Computing activity...")
+        self.__activity = []
+        for cell in range(self.__cells):
+            data = self.__binarized_fast[cell]
+            box = lambda t, a, t_start, t_end: a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
+            t_half = self.__time[-1]/2
+            res = differential_evolution(lambda p: np.sum((box(self.__time, *p) - data)**2),  # quadratic cost function
+                                 [[0, 100], [0, t_half], [t_half, 2*t_half]])  # parameter bounds
+            self.__activity.append(res.x[1:])
+
+
+    def plot_binarized(self, cell):
         if self.__binarized_slow is False or self.__binarized_fast is False:
             raise ValueError("No binarized data!")
 
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-        if not self.__good_cells[i]:
+        if not self.__good_cells[cell]:
             ax1.set_facecolor(EXCLUDE_COLOR)
-        fig.suptitle("Binarized data ({0})".format("keep" if self.__good_cells[i] else "exclude"))
+        fig.suptitle("Binarized data ({0})".format("keep" if self.__good_cells[cell] else "exclude"))
 
-        mean = np.mean(self.__signal[i])
-        max_signal = max(abs(self.__signal[i]-mean))
-        norm_signal = (self.__signal[i]-mean)/max_signal
-        max_fast = max(abs(self.__filtered_fast[i]))
+        mean = np.mean(self.__signal[cell])
+        max_signal = max(abs(self.__signal[cell]-mean))
+        norm_signal = (self.__signal[cell]-mean)/max_signal
+        max_fast = max(abs(self.__filtered_fast[cell]))
 
-        filtered_fast = self.__filtered_fast[i]
-        threshold = self.__distributions[i]["p_root"]
+        filtered_fast = self.__filtered_fast[cell]
+        threshold = self.__distributions[cell]["p_root"]
         ax1.plot(self.__time, norm_signal*max_fast, linewidth=0.5, color='dimgrey', alpha=0.5)
         ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='red')
-        ax1.plot(self.__time, self.__binarized_fast[i]*threshold, linewidth=0.75, color='black')
+        ax1.plot(self.__time, self.__binarized_fast[cell]*threshold, linewidth=0.75, color='black')
         ax1.set_ylabel("Amplitude")
+
+        border = self.__activity[cell]
+        ax1.axvspan(0, border[0], alpha=0.5, color=EXCLUDE_COLOR)
+        ax1.axvspan(border[1], self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
 
         ax3 = ax1.twinx()
         ax3.set_ylabel("Action potentials")
 
-        filtered_slow = self.__filtered_slow[i]
+        filtered_slow = self.__filtered_slow[cell]
         ax2.plot(self.__time, 12/2*(norm_signal+1), linewidth=0.5, color='dimgrey', alpha=0.5)
         ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='blue')
-        ax2.plot(self.__time, self.__binarized_slow[i], color='black')
+        ax2.plot(self.__time, self.__binarized_slow[cell], color='black')
         ax2.set_xlabel("Time [s]")
         ax2.set_ylabel("Amplitude")
 
@@ -382,6 +401,13 @@ class Data(object):
                 fig = self.plot_binarized(i)
             plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
             plt.close()
+
+    # def compute_time_distributions(self):
+    #     if self.__binarized_fast is False:
+    #         raise ValueError("No binarized data.")
+    #     for cell in range(self.__cells):
+    #         binarized = self.__binarized_fast[cell]
+    #         hist = np.histogram(binarized, 50)
 
 
     def is_analyzed(self):

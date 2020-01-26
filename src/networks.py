@@ -13,6 +13,9 @@ class Networks(object):
         self.__filtered_slow = filtered_slow
         self.__filtered_fast = filtered_fast
 
+        self.__R_slow = False
+        self.__R_fast = False
+
         self.__G_slow = False
         self.__G_fast = False
 
@@ -24,23 +27,17 @@ class Networks(object):
 # ----------------------------- NETWORK METHODS ------------------------------ #
 
     def build_networks(self):
-        self.__G_slow = []
-        # Calculate threshold and construct network for each slice
-        for slice in self.__filtered_slow:
-            slow_threshold = bisect(lambda x: self.__f(slice, x), 0, 1, xtol=0.01)
-            G_slow = self.__construct_network(slice, slow_threshold)
-            self.__G_slow.append(G_slow)
+        # Calculate threshold and construct network
+        slow_threshold = bisect(lambda x: self.__f(self.__filtered_slow, x), 0, 1, xtol=0.01)
+        self.__G_slow, self.__R_slow = self.__construct_network(self.__filtered_slow, slow_threshold)
 
-        self.__G_fast = []
-        # Calculate threshold and construct network for each slice
-        for slice in self.__filtered_fast:
-            fast_threshold = bisect(lambda x: self.__f(slice, x), 0, 1, xtol=0.01)
-            G_fast = self.__construct_network(slice, fast_threshold)
-            self.__G_fast.append(G_fast)
+        # Calculate threshold and construct network
+        fast_threshold = bisect(lambda x: self.__f(self.__filtered_fast, x), 0, 1, xtol=0.01)
+        self.__G_fast, self.__R_fast = self.__construct_network(self.__filtered_fast, fast_threshold)
 
     # Threshold is found by calculating root of this function
     def __f(self, filtered, threshold):
-        G = self.__construct_network(filtered, threshold)
+        (G, R) = self.__construct_network(filtered, threshold)
         average_degree = np.mean([G.degree[i] for i in G])
         return average_degree-self.__ND_avg
 
@@ -62,25 +59,29 @@ class Networks(object):
                     A[i,j] = 1
                     A[j,i] = 1
 
-        return nx.from_numpy_matrix(A)
+        return (nx.from_numpy_matrix(A), correlation_matrix)
 
-    def node_degree(self, slice, cell):
-        return (self.__G_slow[slice].degree(cell),
-                self.__G_fast[slice].degree(cell))
+    def node_degree(self, cell):
+        return (self.__G_slow.degree(cell),
+                self.__G_fast.degree(cell))
 
-    def clustering(self, slice, cell):
-        return (nx.clustering(self.__G_slow[slice])[cell],
-                nx.clustering(self.__G_fast[slice])[cell])
+    def clustering(self, cell):
+        return (nx.clustering(self.__G_slow)[cell],
+                nx.clustering(self.__G_fast)[cell])
 
-    def nearest_neighbour_degree(self, slice, cell):
-        return (nx.average_neighbor_degree(self.__G_slow[slice])[cell],
-                nx.average_neighbor_degree(self.__G_fast[slice])[cell])
+    def nearest_neighbour_degree(self, cell):
+        return (nx.average_neighbor_degree(self.__G_slow)[cell],
+                nx.average_neighbor_degree(self.__G_fast)[cell])
 
-    def draw_networks(self, positions, directory):
-        slices = len(self.__G_slow)
-        for s in range(slices):
-            fig, ax = plt.subplots(nrows=2, ncols=1)
-            nx.draw(self.__G_slow[s], pos=positions, ax=ax[0], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="blue")
-            nx.draw(self.__G_fast[s], pos=positions, ax=ax[1], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="red")
-            plt.savefig("{0}/{1}.pdf".format(directory, s))
-            plt.close()
+    def average_correlation(self):
+        R_slow = np.matrix(self.__R_slow)
+        R_fast = np.matrix(self.__R_fast)
+        np.fill_diagonal(R_slow, 0)
+        np.fill_diagonal(R_fast, 0)
+        return (R_slow.mean(), R_fast.mean())
+
+    def draw_networks(self, positions):
+        fig, ax = plt.subplots(nrows=2, ncols=1)
+        nx.draw(self.__G_slow[s], pos=positions, ax=ax[0], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="blue")
+        nx.draw(self.__G_fast[s], pos=positions, ax=ax[1], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="red")
+        return fig
