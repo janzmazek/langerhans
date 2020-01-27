@@ -216,7 +216,7 @@ class Controller(object):
     def autolimit_click(self):
         if self.current_stage == 0:
             return
-        if self.data.get_activity is not False:
+        if self.data.get_activity() is not False:
             return
         try:
             self.data.autolimit()
@@ -243,7 +243,7 @@ class Controller(object):
     def apply_parameters_click(self):
         new_settings = self.__get_values(self.view.entries)
         self.data.import_settings(new_settings)
-        self.data.reset_computations(self.current_stage)
+        self.data.reset_computations()
         self.current_stage = "imported"
         self.draw_fig()
 

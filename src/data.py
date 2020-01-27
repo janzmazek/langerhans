@@ -15,11 +15,6 @@ SAMPLE_SETTINGS = {
         "Fast [Hz]": [0.04, 0.4],
         "Plot [s]": [250, 1750]
         },
-    # "smooth":
-    #     {
-    #     "points": 51,
-    #     "order": 5
-    #     },
     "Distribution order": 5,
     "Exclude":
         {
@@ -79,15 +74,14 @@ class Data(object):
             raise ValueError("Cell number does not match.")
         self.__good_cells = cells
 
-    def reset_computations(self, stage):
+    def reset_computations(self):
         self.__filtered_slow = False
         self.__filtered_fast = False
         self.__distributions = False
         self.__binarized_slow = False
         self.__binarized_fast = False
         self.__activity = False
-        if stage is not 0:
-            self.__good_cells = np.ones(self.__cells, dtype="bool")
+        self.__good_cells = np.ones(self.__cells, dtype="bool")
 
 
 # --------------------------------- GETTERS ---------------------------------- #
@@ -138,11 +132,6 @@ class Data(object):
         sos = butter(order, [low, high], analog=False, btype='band', output='sos')
         y = sosfiltfilt(sos, data)
         return y
-
-    # def smooth(self, data):
-    #     points = self.__settings["smooth"]["points"]
-    #     order = self.__settings["smooth"]["order"]
-    #     return savgol_filter(data, points, order)
 
     def plot_filtered(self, i):
         if self.__filtered_slow is False or self.__filtered_fast is False:
@@ -228,9 +217,9 @@ class Data(object):
         fig, (ax1, ax2) = plt.subplots(2, 1)
         if self.__good_cells[i] == False:
             ax1.set_facecolor(EXCLUDE_COLOR)
-            fig.suptitle("Score = {0:.2f} ({1})".format(score, "exclude"))
+            fig.suptitle("Distribution (score = {0:.2f})".format(score), x=0.01, y=.98, ha="left")
         else:
-            fig.suptitle("Score = {0:.2f} ({1})".format(score, "keep"))
+            fig.suptitle("Distribution (score = {0:.2f})".format(score), x=0.01, y=.98, ha="left")
 
         mean = np.mean(self.__signal[i])
         ax1.plot(self.__time, self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0, alpha=0.5)

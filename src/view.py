@@ -3,6 +3,7 @@ from tkinter import messagebox
 from tkinter import filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import copy
+import webbrowser
 
 
 # Window parameters
@@ -21,6 +22,7 @@ class View(tk.Tk):
         importmenu = tk.Menu(menubar, tearoff=0)
         exportmenu = tk.Menu(menubar, tearoff=0)
         editmenu = tk.Menu(menubar, tearoff=0)
+        aboutmenu = tk.Menu(menubar, tearoff=0)
 
         menubar.add_cascade(label="Import", menu=importmenu)
         importmenu.add_command(label="Import data", command=lambda: self.controller.import_data())
@@ -35,6 +37,8 @@ class View(tk.Tk):
         exportmenu.add_command(label="Export object (pickle)", command=lambda: self.controller.save_object())
         menubar.add_cascade(label="Edit", menu=editmenu)
         editmenu.add_command(label="Settings", command=lambda: self.controller.edit_settings())
+        menubar.add_cascade(label="About", menu=aboutmenu)
+        aboutmenu.add_command(label="Info", command=lambda: webbrowser.open("https://github.com/janzmazek/cell-networks"))
 
         self.config(menu=menubar)
         self.canvas = False
