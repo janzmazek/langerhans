@@ -41,7 +41,7 @@ class Controller(object):
                 raise(ValueError("Could not open settings file."))
         try:
             self.data.import_settings(settings)
-            self.data.reset_computations(self.current_stage)
+            self.data.reset_computations()
             if self.current_stage is not 0:
                 self.current_stage = "imported"
             self.draw_fig()

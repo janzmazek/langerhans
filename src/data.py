@@ -8,7 +8,9 @@ from matplotlib.colors import colorConverter
 
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
+    "Glucose [mM]": 8,
     "Sampling [Hz]": 10,
+    "Stimulation [frame]": [0, 0],
     "Filter":
         {
         "Slow [Hz]": [0.001, 0.005],
@@ -58,8 +60,8 @@ class Data(object):
 
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
-    def import_settings(self, settings):
-        if not "Sampling [Hz]" in settings and not "Filter" in settings and not "Exclude" in settings:
+    def import_settings(self, settings=SAMPLE_SETTINGS):
+        if not "Sampling [Hz]" in settings and not "Stimulation [frame]" in settings and not "Filter" in settings and not "Exclude" in settings:
             raise ValueError("Bad keys in settings.")
         if not "Slow [Hz]" in settings["Filter"] and not "Fast [Hz]" in settings["Filter"] and not "Plot [s]" in settings["Filter"]:
             raise ValueError("Bad keys in settings[filter].")
@@ -195,6 +197,10 @@ class Data(object):
             phi = np.arctan(abs(min_value))/(np.pi/2)
             score = (1-phi)*p_root/q_root
 
+            spikes_threshold = self.__settings["Exclude"]["Spikes threshold"]
+            if np.exp(p(p_root))<spikes_threshold*self.__points:
+                score = 0
+
             self.__distributions[cell]["hist"] = cumulative_hist
             self.__distributions[cell]["bins"] = x
             self.__distributions[cell]["p"] = p
@@ -250,13 +256,12 @@ class Data(object):
             raise ValueError("No distributions.")
         # Excluding thresholds
         score_threshold = self.__settings["Exclude"]["Score threshold"]
-        spikes_threshold = self.__settings["Exclude"]["Spikes threshold"]
 
         for cell in range(self.__cells):
             p = self.__distributions[cell]["p"]
             p_root = self.__distributions[cell]["p_root"]
             score = self.__distributions[cell]["score"]
-            if score<score_threshold or np.exp(p(p_root))<spikes_threshold*self.__points:
+            if score<score_threshold:
                 self.__good_cells[cell] = False
 
     def exclude(self, cell):
@@ -319,8 +324,12 @@ class Data(object):
             box = lambda t, a, t_start, t_end: a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
             t_half = self.__time[-1]/2
             res = differential_evolution(lambda p: np.sum((box(self.__time, *p) - data)**2),  # quadratic cost function
-                                 [[0, 100], [0, t_half], [t_half, 2*t_half]])  # parameter bounds
+                                 # [[0, 100], [0, t_half], [t_half, 2*t_half]])  # parameter bounds
+                                 [[0, 100], [0, 2*t_half], [0, 2*t_half]])  # parameter bounds
             self.__activity.append(res.x[1:])
+
+            if self.__activity[cell][0] < self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"]:
+                self.__good_cells[cell] = False
 
 
     def plot_binarized(self, cell):
@@ -342,6 +351,8 @@ class Data(object):
         ax1.plot(self.__time, norm_signal*max_fast, linewidth=0.5, color='dimgrey', alpha=0.5)
         ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='red')
         ax1.plot(self.__time, self.__binarized_fast[cell]*threshold, linewidth=0.75, color='black')
+        ax1.axvline(self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"], c="grey")
+        ax1.axvline(self.__settings["Stimulation [frame]"][1]/self.__settings["Sampling [Hz]"], c="grey")
         ax1.set_ylabel("Amplitude")
 
         if self.__activity is not False:
