@@ -32,6 +32,7 @@ class Data(object):
 # ------------------------------- INITIALIZER -------------------------------- #
     def __init__(self):
         self.__signal = False
+        self.__mean_islet = False
         self.__time = False
         self.__settings = False
 
@@ -49,7 +50,9 @@ class Data(object):
     def import_data(self, signal):
         if not len(signal.shape)==2:
             raise ValueError("Signal shape not 2x2.")
-        self.__signal = signal[:,1:].transpose()
+        self.__signal = np.around(signal[:,1:].transpose(), decimals=3)
+        self.__mean_islet = np.mean(self.__signal, 0) # average over 0 axis
+        self.__mean_islet = self.__mean_islet - np.mean(self.__mean_islet)
         if self.__settings is False:
             self.__settings = SAMPLE_SETTINGS
         sampling = self.__settings["Sampling [Hz]"]
@@ -110,6 +113,7 @@ class Data(object):
 
         fig, ax = plt.subplots()
         ax.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
+        ax.plot(self.__time, self.__mean_islet, linewidth=0.5, color='k')
         ax.set_xlim(self.__settings["Filter"]["Plot [s]"])
         ax.set_xlabel("Time [s]")
         ax.set_ylabel("Amplitude")
@@ -276,6 +280,24 @@ class Data(object):
 
 # ---------- Binarize ---------- #
 
+    def __search_sequence(self, arr, seq):
+        # Store sizes of input array and sequence
+        seq = np.array(seq)
+        Na, Nseq = arr.size, seq.size
+
+        # Range of sequence
+        r_seq = np.arange(Nseq)
+
+        # Create a 2D array of sliding indices across the entire length of input array.
+        # Match up with the input sequence & get the matching starting indices.
+        M = (arr[np.arange(Na-Nseq+1)[:,None] + r_seq] == seq).all(1)
+
+        # Get the range of those indices as final output
+        if M.any() > 0:
+            return np.where(M == True)[0]
+        else:
+            return np.array([], dtype="int") # No match found
+
     def binarize_fast(self):
         if self.__distributions is False or self.__filtered_fast is False:
             raise ValueError("No distribution or filtered data.")
@@ -291,28 +313,22 @@ class Data(object):
         self.__binarized_slow = np.zeros((self.__cells, self.__points))
         for cell in range(self.__cells):
             signal = self.__filtered_slow[cell]
-            self.__binarized_slow[cell] = np.heaviside(np.gradient(signal), 0)
-            extremes = []
-            for i in range(1, self.__points):
-                if self.__binarized_slow[cell,i]!=self.__binarized_slow[cell,i-1]:
-                    extremes.append(i)
+            heavisided_gradient = np.heaviside(np.gradient(signal), 0)
+            minima = self.__search_sequence(heavisided_gradient, [0,1])
+            maxima = self.__search_sequence(heavisided_gradient, [1,0])
+            extremes = np.sort(np.concatenate((minima, maxima)))
 
-            up = self.__binarized_slow[0,cell]
-            counter = 0
-            for e in extremes:
-                interval = e-counter
-                for phi in range(6):
-                    lower = counter+int(np.floor(interval/6*phi))
-                    higher = counter+int(np.floor(interval/6*(phi+1)))
-                    add = 1 if up else 7
-                    self.__binarized_slow[cell,lower:higher] = phi+add
-                up = (up+1)%2
-                counter = e
+            reverse_mode = False if minima[0] < maxima[0] else True
 
-            # Erase values (from 0 to first extreme) and (last extreme to end)
             self.__binarized_slow[cell, 0:extremes[0]] = 0
+            for i in range(len(extremes)-1):
+                e1, e2 = extremes[i], extremes[i+1]
+                if i%2 == int(reverse_mode):
+                    self.__binarized_slow[cell, e1:e2] = np.floor(np.linspace(1,7,e2-e1, endpoint=False))
+                else:
+                    self.__binarized_slow[cell, e1:e2] = np.floor(np.linspace(7,13,e2-e1, endpoint=False))
             self.__binarized_slow[cell, extremes[-1]:] = 0
-            self.__binarized_slow = self.__binarized_slow.astype(int)
+        self.__binarized_slow = self.__binarized_slow.astype(int)
 
     def autolimit(self):
         if self.__binarized_fast is False:

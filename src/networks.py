@@ -61,6 +61,9 @@ class Networks(object):
 
         return (nx.from_numpy_matrix(A), correlation_matrix)
 
+    def adjacency_matrix(self):
+        return (nx.to_numpy_matrix(self.__G_slow), nx.to_numpy_matrix(self.__G_fast))
+
     def node_degree(self, cell):
         return (self.__G_slow.degree(cell),
                 self.__G_fast.degree(cell))

@@ -70,9 +70,6 @@ class Analysis(object):
         self.__networks.draw_networks(self.__positions, location)
 
     def compute_parameters(self):
-        if self.__networks is not False:
-            G_slow = self.__networks.get_G_slow()
-            G_fast = self.__networks.get_G_fast()
 
         par1 = [dict() for c in range(self.__cells)]
         par2 = dict()
@@ -80,15 +77,20 @@ class Analysis(object):
         if self.__networks is not False:
             par2["Rs"] = self.average_correlation()[0]
             par2["Rf"] = self.average_correlation()[1]
+            par2["Ds"] = self.connection_distances()[0]
+            par2["Df"] = self.connection_distances()[1]
+        par2["MA"] = self.mean_amplitude()
         for cell in range(self.__cells):
             par1[cell]["AD"] = self.activity(cell)[0]
             par1[cell]["AT"] = self.activity(cell)[1]
+            par1[cell]["OD"] = self.activity(cell)[2]
             par1[cell]["Fs"] = self.frequency(cell)[0]
             par1[cell]["Ff"] = self.frequency(cell)[1]
             par1[cell]["ISI"] = self.interspike(cell)[0]
             par1[cell]["ISIV"] = self.interspike(cell)[1]
-            par1[cell]["TP"] = self.start(cell)["plateau"]
-            par1[cell]["TS"] = self.start(cell)["spike"]
+            par1[cell]["TP"] = self.time(cell)["plateau_start"]
+            par1[cell]["TS"] = self.time(cell)["spike_start"]
+            par1[cell]["TI"] = self.time(cell)["plateau_end"]
 
             if self.__networks is not False:
                 par1[cell]["NDs"] = self.__networks.node_degree(cell)[0]
@@ -105,15 +107,36 @@ class Analysis(object):
             raise ValueError("Network is not built.")
         return self.__networks.average_correlation()
 
+    def connection_distances(self):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        A_dst = self.distances_matrix()
+        A_slow, A_fast = self.__networks.adjacency_matrix()
+
+        A_dst_slow = np.multiply(A_dst, A_slow)
+        A_dst_fast = np.multiply(A_dst, A_fast)
+
+        slow_distances, fast_distances = [], []
+        for c1 in range(self.__cells):
+            for c2 in range(c1):
+                ds = A_dst_slow[c1,c2]
+                df = A_dst_fast[c1,c2]
+                if ds > 0: slow_distances.append(ds)
+                if df > 0: fast_distances.append(df)
+
+        return (np.array(slow_distances), np.array(fast_distances))
+
+
     def activity(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
         stop = int(self.__activity[cell][1]*self.__sampling)
         bin = self.__binarized_fast[cell][start:stop]
         sum = np.sum(bin)
         length = bin.size
+        Nf = self.frequency(cell)[1]*length/self.__sampling
         if sum == 0:
-            return (length, np.nan)
-        return (length/self.__sampling, sum/length)
+            return (length, np.nan, np.nan)
+        return (length/self.__sampling, sum/length, sum/Nf)
 
     def frequency(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
@@ -164,20 +187,38 @@ class Analysis(object):
 
         return (mean_interspike_interval, interspike_variation)
 
-    def start(self, cell):
+    def time(self, cell):
         bin_fast = self.__binarized_fast[cell]
         time = {}
         stimulation_start = self.__settings["Stimulation [frame]"][0]
+        stimulation_end = self.__settings["Stimulation [frame]"][1]
 
-        time["plateau"] = self.__activity[cell][0] - stimulation_start/self.__sampling
+        time["plateau_start"] = self.__activity[cell][0] - stimulation_start/self.__sampling
+        time["plateau_end"] = stimulation_end/self.__sampling - self.__activity[cell][1]
+        if time["plateau_end"] < 0: time["plateau_end"] = 0
 
         fast_peaks = self.__search_sequence(bin_fast[stimulation_start:], [0,1])
         if len(fast_peaks) < 3:
-            time["spike"] = np.nan
+            time["spike_start"] = np.nan
         else:
-            time["spike"] = (np.mean(fast_peaks[:3]) - stimulation_start)/self.__sampling
+            time["spike_start"] = (np.mean(fast_peaks[:3]) - stimulation_start)/self.__sampling
 
         return time
+
+    def mean_amplitude(self):
+        amplitudes = []
+        for cell in range(self.__cells):
+            heavisided_gradient = np.heaviside(np.gradient(self.__filtered_slow[cell]), 0)
+            minima = self.__search_sequence(heavisided_gradient, [0,1])
+            maxima = self.__search_sequence(heavisided_gradient, [1,0])
+
+            if maxima[0] < minima[0]: maxima = np.delete(maxima, 0)
+            if maxima[-1] < minima[-1]: minima = np.delete(minima, 0)
+
+            for i, j in zip(minima, maxima):
+                amplitudes.append(self.__filtered_slow[cell][j]-self.__filtered_slow[cell][i])
+        return np.mean(amplitudes)
+
 
     def node_degree(self, cell):
         if self.__networks is False:
@@ -213,17 +254,26 @@ class Analysis(object):
                 spikes[phase-1] += np.sum(fast_isolated_unitized)
         return (phases, spikes)
 
-    def correlation_vs_distance(self):
-        distances = []
-        correlations_slow = []
-        correlations_fast = []
+    def distances_matrix(self):
+        A_dst = np.zeros((self.__cells, self.__cells))
         for cell1 in range(self.__cells):
             for cell2 in range(cell1):
                 x1, y1 = self.__positions[cell1,0], self.__positions[cell1,1]
                 x2, y2 = self.__positions[cell2,0], self.__positions[cell2,1]
                 distance = np.sqrt((x1-x2)**2 + (y1-y2)**2)
-                distances.append(distance)
+                A_dst[cell1, cell2] = distance
+                A_dst[cell2, cell1] = distance
+        return A_dst
 
+
+    def correlation_vs_distance(self):
+        A_dst = self.distances_matrix()
+        distances = []
+        correlations_slow = []
+        correlations_fast = []
+        for cell1 in range(self.__cells):
+            for cell2 in range(cell1):
+                distances.append(A_dst[cell1, cell2])
                 corr_slow = np.corrcoef(self.__filtered_slow[cell1],
                                         self.__filtered_slow[cell2])[0,1]
                 corr_fast = np.corrcoef(self.__filtered_fast[cell1],
@@ -231,3 +281,8 @@ class Analysis(object):
                 correlations_slow.append(corr_slow)
                 correlations_fast.append(corr_fast)
         return (distances, correlations_slow, correlations_fast)
+
+# ------------------------------ EXTRA METHODS ------------------------------- #
+
+    def mean_filtered_slow(self):
+        return np.mean(self.__filtered_slow, 0) # average over 0 axis
