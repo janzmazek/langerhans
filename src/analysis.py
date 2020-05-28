@@ -65,9 +65,21 @@ class Analysis(object):
         else:
             return np.array([], dtype="int") # No match found
 
+
+# ------------------------------ GETTER METHODS ------------------------------ #
+
+    def get_positions(self): return self.__positions
+    def get_filtered_slow(self): return self.__filtered_slow
+    def get_filtered_fast(self): return self.__filtered_fast
+    def get_R_slow(self): return self.__networks.get_R_slow()
+    def get_R_fast(self): return self.__networks.get_R_fast()
+    def get_adjacency_matrix(self): return self.__networks.adjacency_matrix()
+
+
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
-    def draw_networks(self, location):
-        self.__networks.draw_networks(self.__positions, location)
+
+    def draw_networks(self):
+        return self.__networks.draw_networks(self.__positions)
 
     def compute_parameters(self):
 
@@ -136,7 +148,7 @@ class Analysis(object):
         Nf = self.frequency(cell)[1]*length/self.__sampling
         if sum == 0:
             return (length, np.nan, np.nan)
-        return (length/self.__sampling, sum/length, sum/Nf)
+        return (length/self.__sampling, sum/length, (sum/self.__sampling)/Nf)
 
     def frequency(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
@@ -194,14 +206,13 @@ class Analysis(object):
         stimulation_end = self.__settings["Stimulation [frame]"][1]
 
         time["plateau_start"] = self.__activity[cell][0] - stimulation_start/self.__sampling
-        time["plateau_end"] = stimulation_end/self.__sampling - self.__activity[cell][1]
-        if time["plateau_end"] < 0: time["plateau_end"] = 0
+        time["plateau_end"] = self.__activity[cell][1] - stimulation_end/self.__sampling
 
         fast_peaks = self.__search_sequence(bin_fast[stimulation_start:], [0,1])
         if len(fast_peaks) < 3:
             time["spike_start"] = np.nan
         else:
-            time["spike_start"] = (np.mean(fast_peaks[:3]) - stimulation_start)/self.__sampling
+            time["spike_start"] = (np.mean(fast_peaks[:3]))/self.__sampling
 
         return time
 

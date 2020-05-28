@@ -93,6 +93,7 @@ class Data(object):
     def get_settings(self): return self.__settings
     def get_time(self): return self.__time
     def get_signal(self): return self.__signal
+    def get_mean_islet(self): return self.__mean_islet
     def get_points(self): return self.__points
     def get_cells(self): return self.__cells
     def get_filtered_slow(self): return self.__filtered_slow
@@ -346,6 +347,7 @@ class Data(object):
 
             if self.__activity[cell][0] < self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"]:
                 self.__good_cells[cell] = False
+        self.__activity = np.array(self.__activity)
 
 
     def plot_binarized(self, cell):

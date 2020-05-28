@@ -23,6 +23,8 @@ class Networks(object):
 
     def get_G_slow(self): return self.__G_slow
     def get_G_fast(self): return self.__G_fast
+    def get_R_slow(self): return self.__R_slow
+    def get_R_fast(self): return self.__R_fast
 
 # ----------------------------- NETWORK METHODS ------------------------------ #
 
@@ -85,6 +87,6 @@ class Networks(object):
 
     def draw_networks(self, positions):
         fig, ax = plt.subplots(nrows=2, ncols=1)
-        nx.draw(self.__G_slow[s], pos=positions, ax=ax[0], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="blue")
-        nx.draw(self.__G_fast[s], pos=positions, ax=ax[1], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="red")
+        nx.draw(self.__G_slow, pos=positions, ax=ax[0], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="blue")
+        nx.draw(self.__G_fast, pos=positions, ax=ax[1], with_labels=True, node_size=50, width=0.25, font_size=3, node_color="red")
         return fig
