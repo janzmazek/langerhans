@@ -56,7 +56,7 @@ class Controller(object):
             return
         try:
             good_cells = np.loadtxt(filename, dtype=bool)
-            self.data.import_excluded(good_cells)
+            self.data.import_good_cells(good_cells)
             self.draw_fig()
         except ValueError as e:
             print(e)
@@ -109,7 +109,7 @@ class Controller(object):
     def save_excluded(self):
         if self.current_stage == 0:
             return
-        if self.data.get_excluded() is False:
+        if self.data.get_good_cells() is False:
             return
         filename = self.view.save_as("dat")
         if filename is None:

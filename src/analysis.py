@@ -28,7 +28,7 @@ class Analysis(object):
         self.__settings = data.get_settings()
         self.__sampling = self.__settings["Sampling [Hz]"]
         self.__points = data.get_points()
-        self.__positions = positions[good_cells]
+        self.__positions = positions[good_cells]*self.__settings["Distance [um]"]
         self.__cells = np.sum(good_cells)
 
         self.__filtered_slow = data.get_filtered_slow()[good_cells]
@@ -71,15 +71,12 @@ class Analysis(object):
     def get_positions(self): return self.__positions
     def get_filtered_slow(self): return self.__filtered_slow
     def get_filtered_fast(self): return self.__filtered_fast
-    def get_R_slow(self): return self.__networks.get_R_slow()
-    def get_R_fast(self): return self.__networks.get_R_fast()
-    def get_adjacency_matrix(self): return self.__networks.adjacency_matrix()
-
+    def get_networks(self): return self.__networks
 
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
 
-    def draw_networks(self):
-        return self.__networks.draw_networks(self.__positions)
+    def draw_networks(self, ax1, ax2, colors):
+        return self.__networks.draw_networks(self.__positions, ax1, ax2, colors)
 
     def compute_parameters(self):
 
@@ -123,7 +120,7 @@ class Analysis(object):
         if self.__networks is False:
             raise ValueError("Network is not built.")
         A_dst = self.distances_matrix()
-        A_slow, A_fast = self.__networks.adjacency_matrix()
+        A_slow, A_fast = self.__networks.get_A_slow(), self.__networks.get_A_fast()
 
         A_dst_slow = np.multiply(A_dst, A_slow)
         A_dst_fast = np.multiply(A_dst, A_fast)

@@ -22,7 +22,8 @@ SAMPLE_SETTINGS = {
         {
         "Score threshold": 1.5,
         "Spikes threshold": 0.01
-        }
+        },
+    "Distance [um]": 1
     }
 
 class Data(object):
@@ -64,7 +65,7 @@ class Data(object):
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
     def import_settings(self, settings=SAMPLE_SETTINGS):
-        if not "Sampling [Hz]" in settings and not "Stimulation [frame]" in settings and not "Filter" in settings and not "Exclude" in settings:
+        if not "Sampling [Hz]" in settings and not "Stimulation [frame]" in settings and not "Filter" in settings and not "Exclude" in settings and not "Distance [um]" in settings:
             raise ValueError("Bad keys in settings.")
         if not "Slow [Hz]" in settings["Filter"] and not "Fast [Hz]" in settings["Filter"] and not "Plot [s]" in settings["Filter"]:
             raise ValueError("Bad keys in settings[filter].")
@@ -72,7 +73,7 @@ class Data(object):
             raise ValueError("Bad keys in settings[exclude].")
         self.__settings = settings
 
-    def import_excluded(self, cells):
+    def import_good_cells(self, cells):
         if self.__signal is False:
             raise ValueError("No imported data!")
         if len(cells) != self.__cells:
