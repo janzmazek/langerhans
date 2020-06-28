@@ -1,5 +1,6 @@
 import numpy as np
 import networkx as nx
+from community import community_louvain
 import matplotlib.pyplot as plt
 from scipy.optimize import bisect
 
@@ -40,6 +41,7 @@ class Networks(object):
         # Calculate threshold and construct network
         fast_threshold, r = bisect(lambda x: self.__graph_from_threshold(self.__R_fast, x)["ND"]-self.__ND_avg, 0, 1, full_output=True)
 
+        # self.__G_slow = self.__graph_from_threshold(self.__R_slow, slow_threshold)["G"]
         self.__G_slow = self.__graph_from_threshold(self.__R_slow, slow_threshold)["G"]
         self.__G_fast = self.__graph_from_threshold(self.__R_fast, fast_threshold)["G"]
 
@@ -76,6 +78,24 @@ class Networks(object):
     def nearest_neighbour_degree(self, cell):
         return (nx.average_neighbor_degree(self.__G_slow)[cell],
                 nx.average_neighbor_degree(self.__G_fast)[cell])
+
+    def modularity(self):
+        partition_slow = community_louvain.best_partition(self.__G_slow)
+        partition_fast = community_louvain.best_partition(self.__G_fast)
+        Q_slow = community_louvain.modularity(partition_slow, self.__G_slow)
+        Q_fast = community_louvain.modularity(partition_fast, self.__G_fast)
+
+        return (Q_slow, Q_fast)
+
+    def global_efficiency(self):
+        GE_slow = nx.global_efficiency(self.__G_slow)
+        GE_fast = nx.global_efficiency(self.__G_fast)
+        return (GE_slow, GE_fast)
+
+    def max_connected_component(self):
+        MS_slow = len(max(nx.connected_components(self.__G_slow), key=len))/self.__cells
+        MS_fast = len(max(nx.connected_components(self.__G_fast), key=len))/self.__cells
+        return (MS_slow, MS_fast)
 
     def average_correlation(self):
         R_slow = np.matrix(self.__R_slow)

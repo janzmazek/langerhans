@@ -88,6 +88,12 @@ class Analysis(object):
             par2["Rf"] = self.average_correlation()[1]
             par2["Ds"] = self.connection_distances()[0]
             par2["Df"] = self.connection_distances()[1]
+            par2["Qs"] = self.__networks.modularity()[0]
+            par2["Qf"] = self.__networks.modularity()[1]
+            par2["GEs"] = self.__networks.global_efficiency()[0]
+            par2["GEf"] = self.__networks.global_efficiency()[1]
+            par2["MCCs"] = self.__networks.max_connected_component()[0]
+            par2["MCCf"] = self.__networks.max_connected_component()[1]
         par2["MA"] = self.mean_amplitude()
         for cell in range(self.__cells):
             par1[cell]["AD"] = self.activity(cell)[0]
@@ -246,10 +252,11 @@ class Analysis(object):
     def spikes_vs_phase(self):
         phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
         spikes = np.zeros(12)
-        for phase in range(1,13):
-            for cell in range(self.__cells):
-                start = int(self.__activity[cell][0]*self.__sampling)
-                stop = int(self.__activity[cell][1]*self.__sampling)
+
+        for cell in range(self.__cells):
+            start = int(self.__activity[cell][0]*self.__sampling)
+            stop = int(self.__activity[cell][1]*self.__sampling)
+            for phase in range(1,13):
                 slow_isolated = self.__binarized_slow[cell][start:stop] == phase
 
                 bin_fast = self.__binarized_fast[cell][start:stop]
@@ -261,6 +268,36 @@ class Analysis(object):
 
                 spikes[phase-1] += np.sum(fast_isolated_unitized)
         return (phases, spikes)
+
+    def spikes_vs_phase_separate(self):
+        phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
+        spikes = []
+
+        for cell in range(self.__cells):
+            start = int(self.__activity[cell][0]*self.__sampling)
+            stop = int(self.__activity[cell][1]*self.__sampling)
+            bin_slow = self.__binarized_slow[cell][start:stop]
+            wave_start_1 = self.__search_sequence(bin_slow, [0,1])
+            wave_start_2 = self.__search_sequence(bin_slow, [12,1])
+            wave_start = np.sort(np.concatenate((wave_start_1, wave_start_2)))
+
+            for w in range(len(wave_start)-1):
+                separate_spikes = np.zeros(12)
+                start, stop = wave_start[w], wave_start[w+1]
+                for phase in range(1,13):
+                    slow_isolated = self.__binarized_slow[cell][start:stop] == phase
+
+                    bin_fast = self.__binarized_fast[cell][start:stop]
+                    spike_indices = self.__search_sequence(bin_fast, [0,1]) + 1
+                    fast_unitized = np.zeros(len(bin_fast))
+                    fast_unitized[spike_indices] = 1
+
+                    fast_isolated_unitized = np.logical_and(slow_isolated, fast_unitized)
+
+                    separate_spikes[phase-1] += np.sum(fast_isolated_unitized)
+                spikes.append(separate_spikes)
+        return (phases, np.array(spikes))
+
 
     def distances_matrix(self):
         A_dst = np.zeros((self.__cells, self.__cells))
