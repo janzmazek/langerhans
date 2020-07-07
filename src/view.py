@@ -32,7 +32,7 @@ class View(tk.Tk):
         menubar.add_cascade(label="Export", menu=exportmenu)
         exportmenu.add_command(label="Export settings", command=lambda: self.controller.save_settings())
         exportmenu.add_command(label="Export image", command=lambda: self.controller.save_image())
-        exportmenu.add_command(label="Export all images", command=lambda: self.controller.save_images())
+        exportmenu.add_command(label="Export event plot", command=lambda: self.controller.save_eventplot())
         exportmenu.add_command(label="Export excluded", command=lambda: self.controller.save_excluded())
         exportmenu.add_command(label="Export object (pickle)", command=lambda: self.controller.save_object())
         menubar.add_cascade(label="Edit", menu=editmenu)

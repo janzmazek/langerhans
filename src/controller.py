@@ -97,14 +97,14 @@ class Controller(object):
         fig = self.__get_fig()
         plt.savefig(file)
 
-    def save_images(self):
+    def save_eventplot(self):
         if self.current_stage == 0:
             return
-        directory = self.view.open_directory()
-        if directory is None:
+        file = self.view.save_as("pdf")
+        if file is None:
             return
-        for cell in range(self.data.get_cells()):
-            fig = self.data.save_plots(self.current_stage, directory)
+        fig = self.data.plot_events()
+        plt.savefig(file)
 
     def save_excluded(self):
         if self.current_stage == 0:
