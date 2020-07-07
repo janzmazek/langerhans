@@ -8,7 +8,7 @@ class Networks(object):
     """docstring for Networks."""
 
 # ------------------------------- INITIALIZER -------------------------------- #
-    def __init__(self, cells, filtered_slow, filtered_fast, ND_avg=7):
+    def __init__(self, cells, filtered_slow, filtered_fast, ND_avg=8):
         self.__ND_avg = ND_avg
         self.__cells = cells
         self.__filtered_slow = filtered_slow

@@ -65,6 +65,16 @@ class Analysis(object):
         else:
             return np.array([], dtype="int") # No match found
 
+    def __distances_matrix(self):
+        A_dst = np.zeros((self.__cells, self.__cells))
+        for cell1 in range(self.__cells):
+            for cell2 in range(cell1):
+                x1, y1 = self.__positions[cell1,0], self.__positions[cell1,1]
+                x2, y2 = self.__positions[cell2,0], self.__positions[cell2,1]
+                distance = np.sqrt((x1-x2)**2 + (y1-y2)**2)
+                A_dst[cell1, cell2] = distance
+                A_dst[cell2, cell1] = distance
+        return A_dst
 
 # ------------------------------ GETTER METHODS ------------------------------ #
 
@@ -73,49 +83,51 @@ class Analysis(object):
     def get_filtered_fast(self): return self.__filtered_fast
     def get_networks(self): return self.__networks
 
-# ----------------------------- ANALYSIS METHODS ----------------------------- #
+# ----------------------------- PARAMETER METHODS ---------------------------- #
 
     def draw_networks(self, ax1, ax2, colors):
         return self.__networks.draw_networks(self.__positions, ax1, ax2, colors)
 
     def compute_parameters(self):
 
-        par1 = [dict() for c in range(self.__cells)]
-        par2 = dict()
+        par_cell = [dict() for c in range(self.__cells)]
+        par_network = dict()
 
         if self.__networks is not False:
-            par2["Rs"] = self.average_correlation()[0]
-            par2["Rf"] = self.average_correlation()[1]
-            par2["Ds"] = self.connection_distances()[0]
-            par2["Df"] = self.connection_distances()[1]
-            par2["Qs"] = self.__networks.modularity()[0]
-            par2["Qf"] = self.__networks.modularity()[1]
-            par2["GEs"] = self.__networks.global_efficiency()[0]
-            par2["GEf"] = self.__networks.global_efficiency()[1]
-            par2["MCCs"] = self.__networks.max_connected_component()[0]
-            par2["MCCf"] = self.__networks.max_connected_component()[1]
-        par2["MA"] = self.mean_amplitude()
+            par_network["Rs"] = self.average_correlation()[0]
+            par_network["Rf"] = self.average_correlation()[1]
+            par_network["Ds"] = self.connection_distances()[0]
+            par_network["Df"] = self.connection_distances()[1]
+            par_network["Qs"] = self.modularity()[0]
+            par_network["Qf"] = self.modularity()[1]
+            par_network["GEs"] = self.global_efficiency()[0]
+            par_network["GEf"] = self.global_efficiency()[1]
+            par_network["MCCs"] = self.max_connected_component()[0]
+            par_network["MCCf"] = self.max_connected_component()[1]
+        par_network["MA"] = self.mean_amplitude()
         for cell in range(self.__cells):
-            par1[cell]["AD"] = self.activity(cell)[0]
-            par1[cell]["AT"] = self.activity(cell)[1]
-            par1[cell]["OD"] = self.activity(cell)[2]
-            par1[cell]["Fs"] = self.frequency(cell)[0]
-            par1[cell]["Ff"] = self.frequency(cell)[1]
-            par1[cell]["ISI"] = self.interspike(cell)[0]
-            par1[cell]["ISIV"] = self.interspike(cell)[1]
-            par1[cell]["TP"] = self.time(cell)["plateau_start"]
-            par1[cell]["TS"] = self.time(cell)["spike_start"]
-            par1[cell]["TI"] = self.time(cell)["plateau_end"]
+            par_cell[cell]["AD"] = self.activity(cell)[0]
+            par_cell[cell]["AT"] = self.activity(cell)[1]
+            par_cell[cell]["OD"] = self.activity(cell)[2]
+            par_cell[cell]["Fs"] = self.frequency(cell)[0]
+            par_cell[cell]["Ff"] = self.frequency(cell)[1]
+            par_cell[cell]["ISI"] = self.interspike(cell)[0]
+            par_cell[cell]["ISIV"] = self.interspike(cell)[1]
+            par_cell[cell]["TP"] = self.time(cell)["plateau_start"]
+            par_cell[cell]["TS"] = self.time(cell)["spike_start"]
+            par_cell[cell]["TI"] = self.time(cell)["plateau_end"]
 
             if self.__networks is not False:
-                par1[cell]["NDs"] = self.__networks.node_degree(cell)[0]
-                par1[cell]["NDf"] = self.__networks.node_degree(cell)[1]
-                par1[cell]["Cs"] = self.__networks.clustering(cell)[0]
-                par1[cell]["Cf"] = self.__networks.clustering(cell)[1]
-                par1[cell]["NNDs"] = self.__networks.nearest_neighbour_degree(cell)[0]
-                par1[cell]["NNDf"] = self.__networks.nearest_neighbour_degree(cell)[1]
+                par_cell[cell]["NDs"] = self.node_degree(cell)[0]
+                par_cell[cell]["NDf"] = self.node_degree(cell)[1]
+                par_cell[cell]["Cs"] = self.clustering(cell)[0]
+                par_cell[cell]["Cf"] = self.clustering(cell)[1]
+                par_cell[cell]["NNDs"] = self.nearest_neighbour_degree(cell)[0]
+                par_cell[cell]["NNDf"] = self.nearest_neighbour_degree(cell)[1]
 
-        return (par1, par2)
+        return (par_cell, par_network)
+
+# ----------------------- INDIVIDUAL PARAMETER METHODS ----------------------- #
 
     def average_correlation(self):
         if self.__networks is False:
@@ -125,7 +137,7 @@ class Analysis(object):
     def connection_distances(self):
         if self.__networks is False:
             raise ValueError("Network is not built.")
-        A_dst = self.distances_matrix()
+        A_dst = self.__distances_matrix()
         A_slow, A_fast = self.__networks.get_A_slow(), self.__networks.get_A_fast()
 
         A_dst_slow = np.multiply(A_dst, A_slow)
@@ -141,6 +153,34 @@ class Analysis(object):
 
         return (np.array(slow_distances), np.array(fast_distances))
 
+    def modularity(self):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.modularity()
+
+    def global_efficiency(self):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.global_efficiency()
+
+    def max_connected_component(self):
+        if self.__networks is False:
+            raise ValueError("Network is not built.")
+        return self.__networks.max_connected_component()
+
+    def mean_amplitude(self):
+        amplitudes = []
+        for cell in range(self.__cells):
+            heavisided_gradient = np.heaviside(np.gradient(self.__filtered_slow[cell]), 0)
+            minima = self.__search_sequence(heavisided_gradient, [0,1])
+            maxima = self.__search_sequence(heavisided_gradient, [1,0])
+
+            if maxima[0] < minima[0]: maxima = np.delete(maxima, 0)
+            if maxima[-1] < minima[-1]: minima = np.delete(minima, 0)
+
+            for i, j in zip(minima, maxima):
+                amplitudes.append(self.__filtered_slow[cell][j]-self.__filtered_slow[cell][i])
+        return np.mean(amplitudes)
 
     def activity(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
@@ -219,20 +259,6 @@ class Analysis(object):
 
         return time
 
-    def mean_amplitude(self):
-        amplitudes = []
-        for cell in range(self.__cells):
-            heavisided_gradient = np.heaviside(np.gradient(self.__filtered_slow[cell]), 0)
-            minima = self.__search_sequence(heavisided_gradient, [0,1])
-            maxima = self.__search_sequence(heavisided_gradient, [1,0])
-
-            if maxima[0] < minima[0]: maxima = np.delete(maxima, 0)
-            if maxima[-1] < minima[-1]: minima = np.delete(minima, 0)
-
-            for i, j in zip(minima, maxima):
-                amplitudes.append(self.__filtered_slow[cell][j]-self.__filtered_slow[cell][i])
-        return np.mean(amplitudes)
-
 
     def node_degree(self, cell):
         if self.__networks is False:
@@ -249,70 +275,47 @@ class Analysis(object):
             raise ValueError("Network is not built.")
         return self.__networks.nearest_neighbour_degree(cell)
 
-    def spikes_vs_phase(self):
-        phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
-        spikes = np.zeros(12)
+# ----------------------------- ANALYSIS METHODS ----------------------------- #
+# ----------------------------- Spikes vs phases ----------------------------- #
 
+    def spikes_vs_phase(self, mode="normal"):
+        phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
+        spikes = np.zeros((self.__cells, 12))
+
+        # Iterate through cells
         for cell in range(self.__cells):
             start = int(self.__activity[cell][0]*self.__sampling)
             stop = int(self.__activity[cell][1]*self.__sampling)
-            for phase in range(1,13):
-                slow_isolated = self.__binarized_slow[cell][start:stop] == phase
 
-                bin_fast = self.__binarized_fast[cell][start:stop]
+            bin_slow = self.__binarized_slow[cell][start:stop]
+            bin_fast = self.__binarized_fast[cell][start:stop]
+
+            # Iterate through phases (1–12)
+            for phase in range(1,13):
+                # Bool array with True at slow phase:
+                slow_isolated = bin_slow == phase
+
+                # Bool array with True at fast spike:
                 spike_indices = self.__search_sequence(bin_fast, [0,1]) + 1
                 fast_unitized = np.zeros(len(bin_fast))
                 fast_unitized[spike_indices] = 1
 
+                # Bool array with True at fast spike AND slow phase
                 fast_isolated_unitized = np.logical_and(slow_isolated, fast_unitized)
 
-                spikes[phase-1] += np.sum(fast_isolated_unitized)
-        return (phases, spikes)
+                # Append result
+                spikes[cell, phase-1] = np.sum(fast_isolated_unitized)
 
-    def spikes_vs_phase_separate(self):
-        phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
-        spikes = []
+        if mode == "normal":
+            result = np.sum(spikes, axis=0)
+        elif mode == "separate":
+            result = spikes
+        return (phases, result)
 
-        for cell in range(self.__cells):
-            start = int(self.__activity[cell][0]*self.__sampling)
-            stop = int(self.__activity[cell][1]*self.__sampling)
-            bin_slow = self.__binarized_slow[cell][start:stop]
-            wave_start_1 = self.__search_sequence(bin_slow, [0,1])
-            wave_start_2 = self.__search_sequence(bin_slow, [12,1])
-            wave_start = np.sort(np.concatenate((wave_start_1, wave_start_2)))
-
-            for w in range(len(wave_start)-1):
-                separate_spikes = np.zeros(12)
-                start, stop = wave_start[w], wave_start[w+1]
-                for phase in range(1,13):
-                    slow_isolated = self.__binarized_slow[cell][start:stop] == phase
-
-                    bin_fast = self.__binarized_fast[cell][start:stop]
-                    spike_indices = self.__search_sequence(bin_fast, [0,1]) + 1
-                    fast_unitized = np.zeros(len(bin_fast))
-                    fast_unitized[spike_indices] = 1
-
-                    fast_isolated_unitized = np.logical_and(slow_isolated, fast_unitized)
-
-                    separate_spikes[phase-1] += np.sum(fast_isolated_unitized)
-                spikes.append(separate_spikes)
-        return (phases, np.array(spikes))
-
-
-    def distances_matrix(self):
-        A_dst = np.zeros((self.__cells, self.__cells))
-        for cell1 in range(self.__cells):
-            for cell2 in range(cell1):
-                x1, y1 = self.__positions[cell1,0], self.__positions[cell1,1]
-                x2, y2 = self.__positions[cell2,0], self.__positions[cell2,1]
-                distance = np.sqrt((x1-x2)**2 + (y1-y2)**2)
-                A_dst[cell1, cell2] = distance
-                A_dst[cell2, cell1] = distance
-        return A_dst
-
+# ------------------------- Correlation vs distance -------------------------- #
 
     def correlation_vs_distance(self):
-        A_dst = self.distances_matrix()
+        A_dst = self.__distances_matrix()
         distances = []
         correlations_slow = []
         correlations_fast = []
@@ -326,8 +329,3 @@ class Analysis(object):
                 correlations_slow.append(corr_slow)
                 correlations_fast.append(corr_fast)
         return (distances, correlations_slow, correlations_fast)
-
-# ------------------------------ EXTRA METHODS ------------------------------- #
-
-    def mean_filtered_slow(self):
-        return np.mean(self.__filtered_slow, 0) # average over 0 axis
