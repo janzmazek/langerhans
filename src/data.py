@@ -50,7 +50,7 @@ class Data(object):
 # --------------------------------- IMPORTS ---------------------------------- #
     def import_data(self, signal):
         if not len(signal.shape)==2:
-            raise ValueError("Signal shape not 2x2.")
+            raise ValueError("Signal shape not 2D.")
         self.__signal = np.around(signal[:,1:].transpose(), decimals=3)
         self.__mean_islet = np.mean(self.__signal, 0) # average over 0 axis
         self.__mean_islet = self.__mean_islet - np.mean(self.__mean_islet)
@@ -337,19 +337,54 @@ class Data(object):
             raise ValueError("No binarized data.")
         print("Computing activity...")
         self.__activity = []
+        # for cell in range(self.__cells):
+        #     data = self.__binarized_fast[cell]
+        #     box = lambda t, a, t_start, t_end: a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
+        #     t_half = self.__time[-1]/2
+        #     res = differential_evolution(lambda p: np.sum((box(self.__time, *p) - data)**2),  # quadratic cost function
+        #                          # [[0, 100], [0, t_half], [t_half, 2*t_half]])  # parameter bounds
+        #                          [[0, 100], [0, 2*t_half], [0, 2*t_half]])  # parameter bounds
+        #     self.__activity.append(res.x[1:])
+        #
+        #     if self.__activity[cell][0] < self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"]:
+        #         self.__good_cells[cell] = False
+        # self.__activity = np.array(self.__activity)
+
+        cumsum = np.cumsum(self.__binarized_fast, axis=1)
+
+
         for cell in range(self.__cells):
-            data = self.__binarized_fast[cell]
-            box = lambda t, a, t_start, t_end: a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
-            t_half = self.__time[-1]/2
-            res = differential_evolution(lambda p: np.sum((box(self.__time, *p) - data)**2),  # quadratic cost function
-                                 # [[0, 100], [0, t_half], [t_half, 2*t_half]])  # parameter bounds
-                                 [[0, 100], [0, 2*t_half], [0, 2*t_half]])  # parameter bounds
-            self.__activity.append(res.x[1:])
+            print(cell)
+            data = cumsum[cell]
+            f = lambda t, C, D: self.__modified_fifth(t, self.__time[-1], data[-1], C, D)
+            popt, pcov = curve_fit(f, self.__time, data)
+            fit = lambda t: f(t, *popt)
+            fit = np.vectorize(fit)
+
+            # A = -2*data[-1]/self.__time[-1]**3
+            # B = 3*data[-1]/self.__time[-1]**2
+            # fit = lambda t: A*t**3 + B*t**2
+
+            diff = data - fit(self.__time)
+            diff_lower = diff[data<0.1*data[-1]]
+            diff_upper = diff[data>0.9*data[-1]]
+            offset_upper = np.sum(data<0.9*data[-1])
+            t_start, t_end = np.argmin(diff_lower), offset_upper + np.argmax(diff_upper)
+
+            self.__activity.append((t_start/self.__settings["Sampling [Hz]"], t_end/self.__settings["Sampling [Hz]"]))
+            print(t_start, t_end)
 
             if self.__activity[cell][0] < self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"]:
                 self.__good_cells[cell] = False
+
         self.__activity = np.array(self.__activity)
 
+    # def __modified_fifth(self, t, t_max, f_max, C, D):
+    #     a = np.array([[t_max**5, t_max**4],[5*t_max**4, 4*t_max**3]])
+    #     b = np.array([f_max-C*t_max**3-D*t_max**2, -3*C*t_max**2-2*D*t_max])
+    #     A, B = np.linalg.solve(a, b)
+    #
+    #     return A*t**5 + B*t**4 + C*t**3 + D*t**2
 
     def plot_binarized(self, cell):
         if self.__binarized_slow is False or self.__binarized_fast is False:
@@ -394,20 +429,23 @@ class Data(object):
 
         return fig
 
-    def save_plots(self, type, directory):
-        if type not in ("imported", "filtered", "distributions", "binarized"):
-            raise ValueError("Unknown 'type' argument.")
-        for i in range(self.__cells):
-            if type == "imported":
-                fig = self.plot(i)
-            elif type == "filtered":
-                fig = self.plot_filtered(i)
-            elif type == "distributions":
-                fig = self.plot_distributions(i)
-            elif type == "binarized":
-                fig = self.plot_binarized(i)
-            plt.savefig("{0}/{1}.pdf".format(directory, i), dpi=200, bbox_inches='tight')
-            plt.close()
+    def plot_events(self):
+        if self.__binarized_slow is False or self.__binarized_fast is False:
+            raise ValueError("No binarized data!")
+        fig, ax = plt.subplots()
+
+        bin_fast = self.__binarized_fast[self.__good_cells]
+        raster = [[] for i in range(len(bin_fast))]
+        sampling = self.__settings["Sampling [Hz]"]
+
+        for i in range(len(bin_fast)):
+            for j in range(len(bin_fast[0])):
+                if bin_fast[i,j] == 1:
+                    raster[i].append(j/sampling)
+
+        ax.eventplot(raster, linewidths=0.1)
+        return fig
+
 
     def is_analyzed(self):
         if self.__filtered_slow is False or self.__filtered_fast is False:
