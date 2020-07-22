@@ -15,6 +15,11 @@ TEXT = "white"
 # BG = "#2d2f37"
 BG = "#3E4149"
 
+WELCOME_TEXT = "WELCOME\n \
+To start analyzing, load a data file (a 2-D matrix readable by np.loadtxt).\n \
+Cells should be rows of the matrix, time should be columns of the matrix.\n \
+You can save or load current state in the form of a pickle object."
+
 class View(tk.Tk):
     """docstring for View."""
 
@@ -46,7 +51,6 @@ class View(tk.Tk):
         aboutmenu.add_command(label="Info", command=lambda: webbrowser.open("https://github.com/janzmazek/cell-networks"))
 
         self.config(menu=menubar)
-        self.canvas = False
 
         self.toolbar = tk.LabelFrame(self, text="Preprocessing Tools", padx=5, pady=5, bg=BG, fg=TEXT)
         self.toolbar.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.NO)
@@ -72,26 +76,34 @@ class View(tk.Tk):
         autolimit_button = tk.Button(self.topframe, highlightbackground=BG, text="Autolimit", command=lambda: self.controller.autolimit_click())
         autolimit_button.pack(side=tk.LEFT)
 
-        exclude_button = tk.Button(self.navbar, highlightbackground=BG, text="exclude", command=lambda: self.controller.exclude_click())
+        self.canvas = tk.Canvas(self, bg="red")
+        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+        text = tk.Label(self.canvas, text=WELCOME_TEXT)
+        text.pack(anchor="center", fill=tk.BOTH, expand=1)
+
+        exclude_button = tk.Button(self.navbar, highlightbackground=BG, text="(↓) exclude", command=lambda: self.controller.exclude_click())
         exclude_button.pack(side=tk.LEFT)
 
         self.bottomframe = tk.Frame(self.navbar, bg=BG)
         self.bottomframe.pack(side=tk.LEFT, fill="none", expand=True)
 
-        previous_button = tk.Button(self.bottomframe, highlightbackground=BG, text="Previous", command=lambda: self.controller.previous_click())
+        previous_button = tk.Button(self.bottomframe, highlightbackground=BG, text="(←) Prev", command=lambda: self.controller.previous_click())
         previous_button.pack(side=tk.LEFT)
 
         self.cell_number_text = tk.Label(self.bottomframe, bg=BG, fg=TEXT, text="0")
         self.cell_number_text.pack(side=tk.LEFT)
 
-        next_button = tk.Button(self.bottomframe, highlightbackground=BG, text="Next", command=lambda: self.controller.next_click())
+        next_button = tk.Button(self.bottomframe, highlightbackground=BG, text="Next (→)", command=lambda: self.controller.next_click())
         next_button.pack(side=tk.LEFT)
+
+        unexclude_button = tk.Button(self.navbar, highlightbackground=BG, text="unexclude (↑)", command=lambda: self.controller.unexclude_click())
+        unexclude_button.pack(side=tk.RIGHT)
 
         self.bind("<Left>", lambda e: self.controller.previous_click())
         self.bind("<Right>", lambda e: self.controller.next_click())
-
-        unexclude_button = tk.Button(self.navbar, highlightbackground=BG, text="unexclude", command=lambda: self.controller.unexclude_click())
-        unexclude_button.pack(side=tk.RIGHT)
+        self.bind("<Up>", lambda e: self.controller.unexclude_click())
+        self.bind("<Down>", lambda e: self.controller.exclude_click())
 
         self.minsize(width=WIDTH, height=HEIGHT)
         self.controller = None
@@ -122,7 +134,9 @@ class View(tk.Tk):
         return filename.name
 
     def draw_fig(self, fig):
-        if self.canvas is not False:
+        if type(self.canvas) == tk.Canvas:
+            self.canvas.destroy()
+        else:
             self.canvas.get_tk_widget().destroy()
         self.canvas = FigureCanvasTkAgg(fig, master=self)
         self.canvas.draw()
