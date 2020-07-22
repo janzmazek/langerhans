@@ -10,6 +10,11 @@ import webbrowser
 WIDTH = 1000
 HEIGHT = 600
 
+WHITE = "white"
+TEXT = "white"
+# BG = "#2d2f37"
+BG = "#3E4149"
+
 class View(tk.Tk):
     """docstring for View."""
 
@@ -43,40 +48,49 @@ class View(tk.Tk):
         self.config(menu=menubar)
         self.canvas = False
 
-        self.toolbar = tk.LabelFrame(self, text="Tools", padx=5, pady=5)
+        self.toolbar = tk.LabelFrame(self, text="Preprocessing Tools", padx=5, pady=5, bg=BG, fg=TEXT)
         self.toolbar.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.NO)
 
-        filter_button = tk.Button(self.toolbar, text="Filter", command=lambda: self.controller.filter_click())
+        self.topframe = tk.Frame(self.toolbar, bg=BG)
+        self.topframe.pack(anchor="center")
+
+        self.navbar = tk.LabelFrame(self, text="Navigation", padx=5, pady=5, bg=BG, fg=TEXT)
+        self.navbar.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=tk.NO)
+
+        filter_button = tk.Button(self.topframe, highlightbackground=BG, text="Filter", command=lambda: self.controller.filter_click())
         filter_button.pack(side=tk.LEFT)
 
-        distributions_button = tk.Button(self.toolbar, text="Compute distributions", command=lambda: self.controller.distributions_click())
+        distributions_button = tk.Button(self.topframe, highlightbackground=BG, text="Compute distributions", command=lambda: self.controller.distributions_click())
         distributions_button.pack(side=tk.LEFT)
 
-        binarize_button = tk.Button(self.toolbar, text="Binarize", command=lambda: self.controller.binarize_click())
+        binarize_button = tk.Button(self.topframe, highlightbackground=BG, text="Binarize", command=lambda: self.controller.binarize_click())
         binarize_button.pack(side=tk.LEFT)
 
-        autoexclude_button = tk.Button(self.toolbar, text="Autoexclude", command=lambda: self.controller.autoexclude_click())
+        autoexclude_button = tk.Button(self.topframe, highlightbackground=BG, text="Autoexclude", command=lambda: self.controller.autoexclude_click())
         autoexclude_button.pack(side=tk.LEFT)
 
-        autolimit_button = tk.Button(self.toolbar, text="Autolimit", command=lambda: self.controller.autolimit_click())
+        autolimit_button = tk.Button(self.topframe, highlightbackground=BG, text="Autolimit", command=lambda: self.controller.autolimit_click())
         autolimit_button.pack(side=tk.LEFT)
 
-        next_button = tk.Button(self.toolbar, text="Next", command=lambda: self.controller.next_click())
-        next_button.pack(side=tk.RIGHT)
+        exclude_button = tk.Button(self.navbar, highlightbackground=BG, text="exclude", command=lambda: self.controller.exclude_click())
+        exclude_button.pack(side=tk.LEFT)
 
-        self.cell_number_text = tk.Label(self.toolbar, text="0")
-        self.cell_number_text.pack(side=tk.RIGHT)
+        self.bottomframe = tk.Frame(self.navbar, bg=BG)
+        self.bottomframe.pack(side=tk.LEFT, fill="none", expand=True)
 
-        previous_button = tk.Button(self.toolbar, text="Previous", command=lambda: self.controller.previous_click())
-        previous_button.pack(side=tk.RIGHT)
+        previous_button = tk.Button(self.bottomframe, highlightbackground=BG, text="Previous", command=lambda: self.controller.previous_click())
+        previous_button.pack(side=tk.LEFT)
+
+        self.cell_number_text = tk.Label(self.bottomframe, bg=BG, fg=TEXT, text="0")
+        self.cell_number_text.pack(side=tk.LEFT)
+
+        next_button = tk.Button(self.bottomframe, highlightbackground=BG, text="Next", command=lambda: self.controller.next_click())
+        next_button.pack(side=tk.LEFT)
 
         self.bind("<Left>", lambda e: self.controller.previous_click())
         self.bind("<Right>", lambda e: self.controller.next_click())
 
-        exclude_button = tk.Button(self.toolbar, text="exclude", command=lambda: self.controller.exclude_click())
-        exclude_button.pack(side=tk.RIGHT)
-
-        unexclude_button = tk.Button(self.toolbar, text="unexclude", command=lambda: self.controller.unexclude_click())
+        unexclude_button = tk.Button(self.navbar, highlightbackground=BG, text="unexclude", command=lambda: self.controller.unexclude_click())
         unexclude_button.pack(side=tk.RIGHT)
 
         self.minsize(width=WIDTH, height=HEIGHT)
