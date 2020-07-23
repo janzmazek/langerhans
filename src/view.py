@@ -52,49 +52,63 @@ class View(tk.Tk):
 
         self.config(menu=menubar)
 
+        # ------------------------------ TOOLBAR ----------------------------- #
+
         self.toolbar = tk.LabelFrame(self, text="Preprocessing Tools", padx=5, pady=5, bg=BG, fg=TEXT)
         self.toolbar.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.NO)
 
-        self.topframe = tk.Frame(self.toolbar, bg=BG)
-        self.topframe.pack(anchor="center")
+        topframe = tk.Frame(self.toolbar, bg=BG)
+        topframe.pack(anchor="center")
+
+        filter_button = tk.Button(topframe, highlightbackground=BG, text="Filter", command=lambda: self.controller.filter_click())
+        filter_button.pack(side=tk.LEFT)
+
+        distributions_button = tk.Button(topframe, highlightbackground=BG, text="Compute distributions", command=lambda: self.controller.distributions_click())
+        distributions_button.pack(side=tk.LEFT)
+
+        binarize_button = tk.Button(topframe, highlightbackground=BG, text="Binarize", command=lambda: self.controller.binarize_click())
+        binarize_button.pack(side=tk.LEFT)
+
+        autoexclude_button = tk.Button(topframe, highlightbackground=BG, text="Autoexclude", command=lambda: self.controller.autoexclude_click())
+        autoexclude_button.pack(side=tk.LEFT)
+
+        autolimit_button = tk.Button(topframe, highlightbackground=BG, text="Autolimit", command=lambda: self.controller.autolimit_click())
+        autolimit_button.pack(side=tk.LEFT)
+
+        # ------------------------------ CANVAS ------------------------------ #
+
+        self.canvas = tk.Canvas(self)
+        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+        middleframe = tk.Frame(self.canvas, bg=BG, borderwidth=5, relief=tk.RAISED)
+        middleframe.pack(side=tk.TOP, fill="none", expand=True)
+
+        text = tk.Label(middleframe, bg=BG, fg=WHITE, text=WELCOME_TEXT)
+        text.pack(anchor="center", padx=10, pady=10)
+
+        data_button = tk.Button(middleframe, highlightbackground=BG, text="Import Data", command=lambda: self.controller.import_data())
+        data_button.pack(side=tk.LEFT, padx=20, pady=20)
+
+        object_button = tk.Button(middleframe, highlightbackground=BG, text="Import Object", command=lambda: self.controller.import_object())
+        object_button.pack(side=tk.RIGHT, padx=20, pady=20)
+        # ------------------------------ NAVBAR ------------------------------ #
 
         self.navbar = tk.LabelFrame(self, text="Navigation", padx=5, pady=5, bg=BG, fg=TEXT)
         self.navbar.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=tk.NO)
 
-        filter_button = tk.Button(self.topframe, highlightbackground=BG, text="Filter", command=lambda: self.controller.filter_click())
-        filter_button.pack(side=tk.LEFT)
-
-        distributions_button = tk.Button(self.topframe, highlightbackground=BG, text="Compute distributions", command=lambda: self.controller.distributions_click())
-        distributions_button.pack(side=tk.LEFT)
-
-        binarize_button = tk.Button(self.topframe, highlightbackground=BG, text="Binarize", command=lambda: self.controller.binarize_click())
-        binarize_button.pack(side=tk.LEFT)
-
-        autoexclude_button = tk.Button(self.topframe, highlightbackground=BG, text="Autoexclude", command=lambda: self.controller.autoexclude_click())
-        autoexclude_button.pack(side=tk.LEFT)
-
-        autolimit_button = tk.Button(self.topframe, highlightbackground=BG, text="Autolimit", command=lambda: self.controller.autolimit_click())
-        autolimit_button.pack(side=tk.LEFT)
-
-        self.canvas = tk.Canvas(self, bg="red")
-        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-
-        text = tk.Label(self.canvas, text=WELCOME_TEXT)
-        text.pack(anchor="center", fill=tk.BOTH, expand=1)
-
         exclude_button = tk.Button(self.navbar, highlightbackground=BG, text="(↓) exclude", command=lambda: self.controller.exclude_click())
         exclude_button.pack(side=tk.LEFT)
 
-        self.bottomframe = tk.Frame(self.navbar, bg=BG)
-        self.bottomframe.pack(side=tk.LEFT, fill="none", expand=True)
+        bottomframe = tk.Frame(self.navbar, bg=BG)
+        bottomframe.pack(side=tk.LEFT, fill="none", expand=True)
 
-        previous_button = tk.Button(self.bottomframe, highlightbackground=BG, text="(←) Prev", command=lambda: self.controller.previous_click())
+        previous_button = tk.Button(bottomframe, highlightbackground=BG, text="(←) Prev", command=lambda: self.controller.previous_click())
         previous_button.pack(side=tk.LEFT)
 
-        self.cell_number_text = tk.Label(self.bottomframe, bg=BG, fg=TEXT, text="0")
+        self.cell_number_text = tk.Label(bottomframe, bg=BG, fg=TEXT, text="0")
         self.cell_number_text.pack(side=tk.LEFT)
 
-        next_button = tk.Button(self.bottomframe, highlightbackground=BG, text="Next (→)", command=lambda: self.controller.next_click())
+        next_button = tk.Button(bottomframe, highlightbackground=BG, text="Next (→)", command=lambda: self.controller.next_click())
         next_button.pack(side=tk.LEFT)
 
         unexclude_button = tk.Button(self.navbar, highlightbackground=BG, text="unexclude (↑)", command=lambda: self.controller.unexclude_click())
@@ -148,13 +162,13 @@ class View(tk.Tk):
         self.settings_window.title("Settings")
 
         # Add upper frame
-        main_frame = tk.Frame(self.settings_window)
+        main_frame = tk.Frame(self.settings_window, bg=BG)
         main_frame.pack(fill=tk.BOTH, expand=tk.YES)
 
         self.entries = self.__add_frame(settings, main_frame)
 
-        apply_parameters_button = tk.Button(main_frame, text="Apply parameters", command=lambda: self.controller.apply_parameters_click())
-        apply_parameters_button.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=tk.YES)
+        apply_parameters_button = tk.Button(main_frame, highlightbackground=BG, text="Apply parameters", command=lambda: self.controller.apply_parameters_click())
+        apply_parameters_button.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=tk.YES, padx=5, pady=5)
 
     def __add_frame(self, parameter, container):
         if type(parameter) in (int, float):
@@ -166,7 +180,7 @@ class View(tk.Tk):
         elif type(parameter) is dict:
             dictionary = {}
             for key in parameter:
-                parameter_frame = tk.LabelFrame(container, text=key)
+                parameter_frame = tk.LabelFrame(container, text=key, bg=BG, fg=TEXT)
                 parameter_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=tk.YES)
                 dictionary[key] = self.__add_frame(parameter[key], parameter_frame)
             return dictionary

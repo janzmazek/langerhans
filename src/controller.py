@@ -31,6 +31,8 @@ class Controller(object):
             print(e)
 
     def import_settings(self):
+        if self.current_stage == 0:
+            return
         filename = self.view.open_file()
         if filename is None:
             return
@@ -42,8 +44,7 @@ class Controller(object):
         try:
             self.data.import_settings(settings)
             self.data.reset_computations()
-            if self.current_stage is not 0:
-                self.current_stage = "imported"
+            self.current_stage = "imported"
             self.draw_fig()
         except ValueError as e:
             print(e)
@@ -98,7 +99,7 @@ class Controller(object):
         plt.savefig(file)
 
     def save_eventplot(self):
-        if self.current_stage == 0:
+        if self.current_stage is not "binarized":
             return
         file = self.view.save_as("pdf")
         if file is None:
