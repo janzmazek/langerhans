@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import colorsys
 
-from src.analysis import Analysis
+from .analysis import Analysis
 
 def lighten_color(color, amount=0.5):
     """
