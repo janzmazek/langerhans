@@ -7,7 +7,6 @@ import matplotlib.colors as mc
 from matplotlib.ticker import (MultipleLocator, FormatStrFormatter, AutoMinorLocator)
 
 import pickle
-import os
 from pathlib import Path
 import colorsys
 
@@ -42,9 +41,25 @@ LIGHT_RED = lighten_color("C3", 0.8)
 class GlobalAnalysis(object):
     """docstring for GlobalAnalysis."""
 
-    def __init__(self, series_list):
-        data_path = Path(__file__).parent.parent / "../DATA"
+    def __init__(self, path):
+        data_path = Path(path)
+        if not data_path.exists() or not data_path.is_dir():
+            raise ValueError("Directory does not exist.")
 
+        pkl_file_list = [x for x in data_path.glob("*.pkl")]
+        pickle_file_list = [x for x in data_path.glob("*.pickle")]
+        data_list = pkl_file_list + pickle_file_list
+        if len(data_list) == 0:
+            raise ValueError("No pickle files found.")
+
+        positions_list = []
+        for s in data_list:
+            positions = data_path / Path("{0}.txt".format(s.stem))
+            if not positions.exists():
+                raise ValueError("Positions file for {0} not found.".format(s.stem))
+            positions_list.append(positions)
+
+        self.__data_dict = {}
         self.__low_glucose = []
         self.__high_glucose = []
         self.__pars_network = {}
@@ -54,12 +69,12 @@ class GlobalAnalysis(object):
         self.__corr_v_dist = {}
         self.__networks = {}
 
-        for s in series_list:
-            pickle_file = data_path / "{}.pkl".format(s)
-            positions_file = data_path / s / "positions{}.dat".format(s)
-            with pickle_file.open("rb") as f:
+        for d, p in zip(data_list, positions_list):
+            s = d.stem
+            self.__data_dict[s] = d
+            with d.open("rb") as f:
                 data = pickle.load(f)
-            with positions_file.open() as f:
+            with p.open() as f:
                 positions = np.loadtxt(f)
 
             glc = data.get_settings()["Glucose [mM]"]
@@ -85,6 +100,12 @@ class GlobalAnalysis(object):
     def get_pars_network(self): return self.__pars_network
     def get_pars_cell(self): return self.__pars_cell
 
+    def get_data(self, series):
+        path = self.__data_dict[series]
+        with path.open("rb") as f:
+            data = pickle.load(f)
+        return data
+
     def mean_std_local(self, parameter):
         means_low = [np.nanmean([self.__pars_cell[s][c][parameter] for c in range(len(self.__pars_cell[s]))]) for s in self.__low_glucose]
         means_high = [np.nanmean([self.__pars_cell[s][c][parameter] for c in range(len(self.__pars_cell[s]))]) for s in self.__high_glucose]
@@ -105,50 +126,6 @@ class GlobalAnalysis(object):
         std_high = np.std(values_high)
 
         return ((values_low, values_high), (mean_low, mean_high), (std_low, std_high))
-
-
-    def plot_signal_protocol(self, ax, series, cell, plots=("raw, slow, fast")):
-        data_path = Path(__file__).parent.parent / "../DATA"
-
-        pickle_file = data_path / "{}.pkl".format(series)
-        with pickle_file.open("rb") as f:
-            data = pickle.load(f)
-
-        good_cells = data.get_good_cells()
-        time = data.get_time()
-        sampling = data.get_settings()["Sampling [Hz]"]
-        glucose = data.get_settings()["Glucose [mM]"]
-
-        if "raw" in plots:
-            signal = data.get_signal()[good_cells][cell]
-            signal = signal - np.mean(signal)
-            signal = signal/np.max(signal)
-            ax.plot(time, signal, "k", alpha=0.25, lw=0.1)
-        if "slow" in plots:
-            filtered_slow = data.get_filtered_slow()[good_cells][cell]
-            filtered_slow = filtered_slow/np.max(filtered_slow)
-            ax.plot(time, filtered_slow, color=LIGHT_BLUE, lw=2)
-        if "fast" in plots:
-            filtered_fast = data.get_filtered_fast()[good_cells][cell]
-            filtered_fast = filtered_fast/np.max(filtered_fast)
-            ax.plot(time, filtered_fast, color=DARK_BLUE, lw=0.2)
-
-        TA, TAE = data.get_settings()["Stimulation [frame]"]
-        TA, TAE = TA/sampling, TAE/sampling
-
-        tform = transforms.blended_transform_factory(ax.transData, ax.transAxes)
-        rectangles = {'' : patches.Rectangle((0, 1), TA, 0.075, color ='C0', alpha=0.5, transform=tform, clip_on=False),
-                      '{} mM'.format(glucose) : patches.Rectangle((TA, 1), TAE-TA, 0.085, color ='C0', alpha=0.8, transform=tform, clip_on=False),
-                      '6 mM' : patches.Rectangle((TAE, 1), time[-1]-TAE, 0.075, color ='C0', alpha=0.5, transform=tform, clip_on=False)
-                     }
-        for r in rectangles:
-            ax.add_artist(rectangles[r])
-            rx, ry = rectangles[r].get_xy()
-            cx = rx + rectangles[r].get_width()/2.0
-            cy = ry + rectangles[r].get_height()/2.0
-            ax.annotate(r, (cx, cy), color='k', fontsize=12, ha='center', va='center', xycoords=tform, annotation_clip=False)
-
-        return data
 
     def plot_avg_stds_local(self, ax, parameter):
         values, means, stds = self.mean_std_local(parameter)
