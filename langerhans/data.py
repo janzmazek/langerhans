@@ -5,6 +5,8 @@ from scipy.optimize import curve_fit, differential_evolution
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import colorConverter
+import matplotlib.transforms as transforms
+import matplotlib.patches as patches
 
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
@@ -105,20 +107,84 @@ class Data(object):
     def get_activity(self): return self.__activity
     def get_good_cells(self): return self.__good_cells
 
+    def plot(self, ax, cell, plots=("mean", "raw", "slow", "fast"), protocol=True):
+        time = self.__time
+        sampling = self.__settings["Sampling [Hz]"]
+        glucose = self.__settings["Glucose [mM]"]
+        TA, TAE = self.__settings["Stimulation [frame]"]
+        TA, TAE = TA/sampling, TAE/sampling
+
+        if "mean" in plots:
+            signal = self.__mean_islet
+            signal = signal/np.max(signal)
+            ax.plot(time, signal, "k", alpha=0.25, lw=0.1)
+        if "raw" in plots:
+            signal = self.__signal[cell]
+            signal = signal - np.mean(signal)
+            signal = signal/np.max(signal)
+            ax.plot(time, signal, "k", alpha=0.5, lw=0.1)
+        if "slow" in plots:
+            filtered_slow = self.__filtered_slow[cell]
+            filtered_slow = filtered_slow/np.max(filtered_slow)
+            ax.plot(time, filtered_slow, color="C0", lw=2)
+        if "fast" in plots:
+            filtered_fast = self.__filtered_fast[cell]
+            filtered_fast = filtered_fast/np.max(filtered_fast)
+            ax.plot(time, filtered_fast, color="C3", lw=0.2)
+        if "bin_slow" in plots:
+            binarized_slow = self.__binarized_slow[cell]
+            ax2 = ax.twinx()
+            ax2.plot(time, binarized_slow, color="k", lw=1)
+            ax2.set_ylabel("Phase")
+        if "bin_fast" in plots:
+            threshold = self.__distributions[cell]["p_root"]
+            filtered_fast = self.__filtered_fast[cell]
+            binarized_slow = self.__binarized_fast[cell]/np.max(filtered_fast)*threshold
+            ax.plot(time, binarized_slow, color="k", lw=1)
+            ax2 = ax.twinx()
+            ax2.set_ylabel("Action potentials")
+
+        ax.set_xlim(0,self.__time[-1])
+        ax.set_ylim(None, 1.1)
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Amplitude")
+
+        ax.axvline(self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"], c="grey")
+        ax.axvline(self.__settings["Stimulation [frame]"][1]/self.__settings["Sampling [Hz]"], c="grey")
+
+        if self.__good_cells[cell]:
+            if self.__activity is not False:
+                border = self.__activity[cell]
+                ax.axvspan(0, border[0], alpha=0.25, color="grey")
+                ax.axvspan(border[1], self.__time[-1], alpha=0.25, color="grey")
+        else:
+            ax.axvspan(0,self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
+
+        if protocol and TA!=0:
+            color = "C0" if glucose == 8 else "C3"
+            # tform = transforms.blended_transform_factory(ax.transData, ax.transAxes)
+            rectangles = {'' : patches.Rectangle((0, 1.1), TA, 0.15, color ='grey', alpha=0.5, transform=ax.transData, clip_on=False),
+                          '{} mM'.format(glucose) : patches.Rectangle((TA, 1.1), TAE-TA, 0.3, color=color, alpha=0.8, transform=ax.transData, clip_on=False),
+                          '6 mM' : patches.Rectangle((TAE, 1.1), time[-1]-TAE, 0.15, color ='grey', alpha=0.5, transform=ax.transData, clip_on=False)
+                         }
+            for r in rectangles:
+                ax.add_artist(rectangles[r])
+                rx, ry = rectangles[r].get_xy()
+                cx = rx + rectangles[r].get_width()/2.0
+                cy = ry + rectangles[r].get_height()/2.0
+                ax.annotate(r, (cx, cy), color='k', fontsize=12, ha='center', va='center', xycoords=ax.transData, annotation_clip=False)
+
 # ----------------------------- ANALYSIS METHODS ----------------------------- #
-    def plot(self, i):
+    def plot_raw(self, i):
         if self.__signal is False:
             raise ValueError("No imported data!")
         if i not in range(self.__cells):
             raise ValueError("Cell index not in range.")
         mean = np.mean(self.__signal[i])
 
-        fig, ax = plt.subplots()
-        ax.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey')
-        ax.plot(self.__time, self.__mean_islet, linewidth=0.5, color='k')
-        ax.set_xlim(self.__settings["Filter"]["Plot [s]"])
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Amplitude")
+        fig, (ax1, ax2) = plt.subplots(2, sharex=True)
+        self.plot(ax1, i, plots=("mean"))
+        self.plot(ax2, i, plots=("raw"), protocol=False)
 
         return fig
 # ---------- Filter + smooth ---------- #
@@ -146,22 +212,15 @@ class Data(object):
             raise ValueError("No filtered data!")
         if i not in range(self.__cells):
             raise ValueError("Cell index not in range.")
-        mean = np.mean(self.__signal[i])
 
         fig, (ax1, ax2) = plt.subplots(2)
-        if not self.__good_cells[i]:
-            ax1.set_facecolor(EXCLUDE_COLOR)
-        fig.suptitle("Filtered data ({0})".format("keep" if self.__good_cells[i] else "exclude"))
+        fig.suptitle("Filtered data")
 
-        ax1.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey', alpha=0.5)
-        ax1.plot(self.__time, self.__filtered_fast[i], linewidth=0.5, color='red')
-        ax1.set_xlim(self.__settings["Filter"]["Plot [s]"])
-        ax1.set_ylabel("Amplitude (fast)")
+        self.plot(ax1, i, plots=("raw, slow"))
+        ax1.set_xlabel(None)
 
-        ax2.plot(self.__time, self.__signal[i]-mean, linewidth=0.5, color='dimgrey', alpha=0.5)
-        ax2.plot(self.__time, self.__filtered_slow[i], linewidth=2, color='blue')
-        ax2.set_xlabel("Time [s]")
-        ax2.set_ylabel("Amplitude (slow)")
+        self.plot(ax2, i, plots=("raw, fast"), protocol=False)
+        ax2.set_xlim(*self.__settings["Filter"]["Plot [s]"])
 
         return fig
 
@@ -227,32 +286,25 @@ class Data(object):
         score = self.__distributions[i]["score"]
 
         fig, (ax1, ax2) = plt.subplots(2, 1)
-        if self.__good_cells[i] == False:
-            ax1.set_facecolor(EXCLUDE_COLOR)
-            fig.suptitle("Distribution (score = {0:.2f})".format(score), x=0.01, y=.98, ha="left")
-        else:
-            fig.suptitle("Distribution (score = {0:.2f})".format(score), x=0.01, y=.98, ha="left")
+        fig.suptitle("Distribution (score = {0:.2f})".format(score), x=0.01, y=.98, ha="left")
 
-        mean = np.mean(self.__signal[i])
-        ax1.plot(self.__time, self.__signal[i]-mean,linewidth=0.5,color='dimgrey', zorder=0, alpha=0.5)
-        ax1.plot(self.__time, self.__filtered_fast[i],linewidth=0.5,color='red', zorder=2)
-        ax1.plot(self.__time, [p_root for i in self.__time], color="k", zorder=2)
-        if q_root is not np.inf:
-            ax1.fill_between(self.__time, -q_root, q_root, color=EXCLUDE_COLOR, zorder=1, alpha=0.5)
+        ax1.bar(x, hist, max(x)/len(x)*0.8, log=True, color="dimgrey", alpha=0.5)
+        ax1.plot(x, np.exp(p(x)), color="red")
+        ax1.plot(p_root, np.exp(p(p_root)), marker="o", color="k")
+        if q_root != np.inf:
+            ax1.plot(np.linspace(0,q_root,10), np.exp(q(np.linspace(0,q_root,10))), color=EXCLUDE_COLOR)
+            ax1.plot(q_root, np.exp(q(q_root)), marker="o", color=EXCLUDE_COLOR)
+        ax1.set_xlabel("Signal height h")
+        ax1.set_ylabel("Data points N")
 
         ax1.xaxis.tick_top()
-        ax1.set_xlabel("Time [s]")
         ax1.xaxis.set_label_position('top')
-        ax1.set_ylabel("Amplitude")
 
-        ax2.bar(x, hist, max(x)/len(x)*0.8, log=True, color="dimgrey", alpha=0.5)
-        ax2.plot(x, np.exp(p(x)), color="red")
-        ax2.plot(p_root, np.exp(p(p_root)), marker="o", color="k")
-        if q_root != np.inf:
-            ax2.plot(np.linspace(0,q_root,10), np.exp(q(np.linspace(0,q_root,10))), color=EXCLUDE_COLOR)
-            ax2.plot(q_root, np.exp(q(q_root)), marker="o", color=EXCLUDE_COLOR)
-        ax2.set_xlabel("Signal height h")
-        ax2.set_ylabel("Data points N")
+        self.plot(ax2, i, plots=("raw, fast"), protocol=False)
+        scaling = np.max(self.__filtered_fast[i])
+        ax2.axhline(p_root/scaling, c="k")
+        if q_root is not np.inf:
+            ax2.fill_between(self.__time, -q_root/scaling, q_root/scaling, color=EXCLUDE_COLOR, zorder=1, alpha=0.5)
 
         return fig
 
@@ -355,41 +407,10 @@ class Data(object):
             raise ValueError("No binarized data!")
 
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-        if not self.__good_cells[cell]:
-            ax1.set_facecolor(EXCLUDE_COLOR)
-        fig.suptitle("Binarized data ({0})".format("keep" if self.__good_cells[cell] else "exclude"))
+        fig.suptitle("Binarized data")
 
-        mean = np.mean(self.__signal[cell])
-        max_signal = max(abs(self.__signal[cell]-mean))
-        norm_signal = (self.__signal[cell]-mean)/max_signal
-        max_fast = max(abs(self.__filtered_fast[cell]))
-
-        filtered_fast = self.__filtered_fast[cell]
-        threshold = self.__distributions[cell]["p_root"]
-        ax1.plot(self.__time, norm_signal*max_fast, linewidth=0.5, color='dimgrey', alpha=0.5)
-        ax1.plot(self.__time, filtered_fast, linewidth=0.5, color='red')
-        ax1.plot(self.__time, self.__binarized_fast[cell]*threshold, linewidth=0.75, color='black')
-        ax1.axvline(self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"], c="grey")
-        ax1.axvline(self.__settings["Stimulation [frame]"][1]/self.__settings["Sampling [Hz]"], c="grey")
-        ax1.set_ylabel("Amplitude")
-
-        if self.__activity is not False:
-            border = self.__activity[cell]
-            ax1.axvspan(0, border[0], alpha=0.5, color=EXCLUDE_COLOR)
-            ax1.axvspan(border[1], self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
-
-        ax3 = ax1.twinx()
-        ax3.set_ylabel("Action potentials")
-
-        filtered_slow = self.__filtered_slow[cell]
-        ax2.plot(self.__time, 12/2*(norm_signal+1), linewidth=0.5, color='dimgrey', alpha=0.5)
-        ax2.plot(self.__time, (filtered_slow/max(abs(filtered_slow))*6)+6, color='blue')
-        ax2.plot(self.__time, self.__binarized_slow[cell], color='black')
-        ax2.set_xlabel("Time [s]")
-        ax2.set_ylabel("Amplitude")
-
-        ax4 = ax2.twinx()
-        ax4.set_ylabel("Phase")
+        self.plot(ax1, cell, plots=("slow", "bin_slow"))
+        self.plot(ax2, cell, plots=("fast", "bin_fast"), protocol=False)
 
         return fig
 
