@@ -160,7 +160,7 @@ class Data(object):
         else:
             ax.axvspan(0,self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
 
-        if protocol and TA!=0:
+        if protocol and TA!=0 and TAE!=0:
             color = "C0" if glucose == 8 else "C3"
             # tform = transforms.blended_transform_factory(ax.transData, ax.transAxes)
             rectangles = {'' : patches.Rectangle((0, 1.1), TA, 0.15, color ='grey', alpha=0.5, transform=ax.transData, clip_on=False),
@@ -391,14 +391,20 @@ class Data(object):
         self.__activity = []
         for cell in range(self.__cells):
             data = self.__binarized_fast[cell]
+            cumsum = np.cumsum(data)
+
+            sampling = self.__settings["Sampling [Hz]"]
+            stimulation = self.__settings["Stimulation [frame]"][0]
+            lower_limit = cumsum[cumsum<0.1*cumsum[-1]].size/sampling
+            upper_limit = (cumsum.size - cumsum[cumsum>0.9*cumsum[-1]].size)/sampling
+
             box = lambda t, a, t_start, t_end: a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
-            t_half = self.__time[-1]/2
             res = differential_evolution(lambda p: np.sum((box(self.__time, *p) - data)**2),  # quadratic cost function
                                  # [[0, 100], [0, t_half], [t_half, 2*t_half]])  # parameter bounds
-                                 [[0, 100], [0, 2*t_half], [0, 2*t_half]])  # parameter bounds
+                                 [[0, 100], [0, lower_limit], [upper_limit, self.__time[-1]]])  # parameter bounds
             self.__activity.append(res.x[1:])
 
-            if self.__activity[cell][0] < self.__settings["Stimulation [frame]"][0]/self.__settings["Sampling [Hz]"]:
+            if self.__activity[cell][0] < stimulation/sampling:
                 self.__good_cells[cell] = False
         self.__activity = np.array(self.__activity)
 
