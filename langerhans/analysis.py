@@ -82,29 +82,9 @@ class Analysis(object):
     def get_filtered_slow(self): return self.__filtered_slow
     def get_filtered_fast(self): return self.__filtered_fast
     def get_networks(self): return self.__networks
-
-# ----------------------------- PARAMETER METHODS ---------------------------- #
-
-    def draw_networks(self, ax1, ax2, colors):
-        return self.__networks.draw_networks(self.__positions, ax1, ax2, colors)
-
-    def compute_parameters(self):
-
+    def get_parameters(self):
         par_cell = [dict() for c in range(self.__cells)]
-        par_network = dict()
-
-        if self.__networks is not False:
-            par_network["Rs"] = self.average_correlation()[0]
-            par_network["Rf"] = self.average_correlation()[1]
-            par_network["Ds"] = self.connection_distances()[0]
-            par_network["Df"] = self.connection_distances()[1]
-            par_network["Qs"] = self.modularity()[0]
-            par_network["Qf"] = self.modularity()[1]
-            par_network["GEs"] = self.global_efficiency()[0]
-            par_network["GEf"] = self.global_efficiency()[1]
-            par_network["MCCs"] = self.max_connected_component()[0]
-            par_network["MCCf"] = self.max_connected_component()[1]
-        par_network["MA"] = self.mean_amplitude()
+        par_network = False
         for cell in range(self.__cells):
             par_cell[cell]["AD"] = self.activity(cell)[0]
             par_cell[cell]["AT"] = self.activity(cell)[1]
@@ -116,16 +96,28 @@ class Analysis(object):
             par_cell[cell]["TP"] = self.time(cell)["plateau_start"]
             par_cell[cell]["TS"] = self.time(cell)["spike_start"]
             par_cell[cell]["TI"] = self.time(cell)["plateau_end"]
+            par_cell[cell]["AMP"] = self.amplitudes()
 
-            if self.__networks is not False:
+        if self.__networks is not False:
+            par_network = dict()
+            par_network["Rs"] = self.average_correlation()[0]
+            par_network["Rf"] = self.average_correlation()[1]
+            par_network["Ds"] = self.connection_distances()[0]
+            par_network["Df"] = self.connection_distances()[1]
+            par_network["Qs"] = self.modularity()[0]
+            par_network["Qf"] = self.modularity()[1]
+            par_network["GEs"] = self.global_efficiency()[0]
+            par_network["GEf"] = self.global_efficiency()[1]
+            par_network["MCCs"] = self.max_connected_component()[0]
+            par_network["MCCf"] = self.max_connected_component()[1]
+            
+            for cell in range(self.__cells):
                 par_cell[cell]["NDs"] = self.node_degree(cell)[0]
                 par_cell[cell]["NDf"] = self.node_degree(cell)[1]
                 par_cell[cell]["Cs"] = self.clustering(cell)[0]
                 par_cell[cell]["Cf"] = self.clustering(cell)[1]
                 par_cell[cell]["NNDs"] = self.nearest_neighbour_degree(cell)[0]
                 par_cell[cell]["NNDf"] = self.nearest_neighbour_degree(cell)[1]
-
-        return (par_cell, par_network)
 
 # ----------------------- INDIVIDUAL PARAMETER METHODS ----------------------- #
 
@@ -168,7 +160,7 @@ class Analysis(object):
             raise ValueError("Network is not built.")
         return self.__networks.max_connected_component()
 
-    def mean_amplitude(self):
+    def amplitudes(self):
         amplitudes = []
         for cell in range(self.__cells):
             heavisided_gradient = np.heaviside(np.gradient(self.__filtered_slow[cell]), 0)
@@ -180,7 +172,7 @@ class Analysis(object):
 
             for i, j in zip(minima, maxima):
                 amplitudes.append(self.__filtered_slow[cell][j]-self.__filtered_slow[cell][i])
-        return np.mean(amplitudes)
+        return amplitudes
 
     def activity(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
@@ -259,7 +251,6 @@ class Analysis(object):
 
         return time
 
-
     def node_degree(self, cell):
         if self.__networks is False:
             raise ValueError("Network is not built.")
@@ -329,3 +320,84 @@ class Analysis(object):
                 correlations_slow.append(corr_slow)
                 correlations_fast.append(corr_fast)
         return (distances, correlations_slow, correlations_fast)
+
+# -------------------------- WAVE DETECTION METHODS -------------------------- #
+    def wave_detection(self):
+        #Rth = 50.0 #mejna razdalja, da sta dve celice povezani (v micronih)
+        Tth = 0.5 #mejna vrednost za aktivacijo med celicami (v sekundah)
+        Nth = 0.10 #delez aktivnih celic v dogodku, da se dogodek upošteva in da se dogodek izriše
+
+        event_num = []
+
+        Nth = int(Nth*self.__cells)
+        act_sig = np.zeros_like(self.__binarized_fast, int)
+        frameTh = int(Tth*self.__sampling)
+        R = self.__distances_matrix()
+        Rth = np.average(R)-1.0*np.std(R)  
+        # print("Povprečna razdalja med celicami je: ", np.average(R), "s standardno deviacijo: ", np.std(R))
+
+        for i in range(self.__points): #zanka po frame-ih
+            nonzero=np.array(np.nonzero(self.__binarized_fast[:,i]))[0]
+
+            if(i==0):  #OBDELA PRVI FRAME V BINSIG MATRIKI
+                k=1
+                for j in nonzero:
+                    if(self.__binarized_fast[j,i]!=0):
+                        act_sig[j,i]=k
+                        k+=1
+
+                for nn in nonzero:
+                    for nnn in nonzero:
+                        if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and nn!=nnn):
+                            act_sig[nn,i]=min(act_sig[nn,i],act_sig[nnn,i])
+                            act_sig[nnn,i]=act_sig[nn,i]
+
+                un_num=np.unique(act_sig[:,i])      
+                for value in un_num:
+                    if(value not in event_num):
+                        event_num.append(value)
+    
+                max_event_num=max(event_num)
+
+            if(i!=0):
+                k=max_event_num+1
+                for j in nonzero:
+                    if(self.__binarized_fast[j,i]!=0 and self.__binarized_fast[j,i-1]==0): #če je celica v tem frameu aktivna v prejsnjem pa ne ji dodeli novo stevilko dogodka
+                        act_sig[j,i]=k
+                        k+=1
+                    if(self.__binarized_fast[j,i]!=0 and self.__binarized_fast[j,i-1]!=0): #če je celica v tem frameu aktivna in je to bila tudi v prejšnjem se ji pripise prejsnja stevilka dogodka
+                        act_sig[j,i]=act_sig[j,i-1]
+
+                if(i>frameTh):
+                    for nn in nonzero:
+                        for nnn in nonzero:
+                            if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and act_sig[nn,i-1]!=0 and np.sum(self.__binarized_fast[nn,i-frameTh:i+1])<=frameTh and act_sig[nnn,i-1]==0 and nn!=nnn):
+                                act_sig[nnn,i]=act_sig[nn,i]
+                            if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and act_sig[nn,i-1]==0 and act_sig[nnn,i-1]!=0 and np.sum(self.__binarized_fast[nnn,i-frameTh:i+1])<=frameTh and nn!=nnn):
+                                act_sig[nn,i]=act_sig[nnn,i]
+                            if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and act_sig[nn,i-1]==0 and act_sig[nnn,i-1]==0 and nn!=nnn):
+                                act_sig[nn,i]=min(act_sig[nn,i],act_sig[nnn,i])
+                                act_sig[nnn,i]=act_sig[nn,i]
+                if(i<=frameTh):
+                    for nn in nonzero:
+                        for nnn in nonzero:
+                            if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and act_sig[nn,i-1]!=0 and act_sig[nnn,i-1]==0 and nn!=nnn):
+                                act_sig[nnn,i]=act_sig[nn,i]
+                            if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and act_sig[nn,i-1]==0 and act_sig[nnn,i-1]!=0 and nn!=nnn):
+                                act_sig[nn,i]=act_sig[nnn,i]
+                            if(act_sig[nn,i]!=0 and act_sig[nnn,i]!=0 and R[nn,nnn]<Rth and act_sig[nn,i-1]==0 and act_sig[nnn,i-1]==0 and nn!=nnn):
+                                act_sig[nn,i]=min(act_sig[nn,i],act_sig[nnn,i])
+                                act_sig[nnn,i]=act_sig[nn,i]
+
+                un_num=np.unique(act_sig[:,i])
+                for value in un_num:
+                    if(value not in event_num):
+                        event_num.append(value)
+
+                max_event_num=max(event_num)
+        return act_sig
+
+# ------------------------------ DRAWING METHODS ----------------------------- #
+
+    def draw_networks(self, ax1, ax2, colors):
+        return self.__networks.draw_networks(self.__positions, ax1, ax2, colors)
