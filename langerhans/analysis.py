@@ -397,7 +397,33 @@ class Analysis(object):
                 max_event_num=max(event_num)
         return act_sig
 
-# ------------------------------ DRAWING METHODS ----------------------------- #
+    def wave_characterization(self, Tth=0.5, Nth=0.1):
+        act_sig = self.wave_detection(Tth, Nth)
+        dogodki = np.unique(act_sig[act_sig != 0])  # vse stevilke dogodkov razen nicle - 0=neaktivne celice
+
+        events = []
+        all_events = []
+
+        for i in dogodki:
+            cells, frames = np.where(act_sig == i)
+            active_cell_number = np.unique(cells).size
+
+            start_time, end_time = np.amin(frames), np.amax(frames)
+
+            characteristics = {
+                "event number": i,
+                "start time": start_time,
+                "end time": end_time,
+                "active cell number": np.unique(cells).size,
+                "relative active cell number": np.unique(cells).size/self.__cells
+            }
+            if(active_cell_number > Nth):
+                events.append(characteristics)
+            all_events.append(characteristics)
+
+        return (events, all_events)
+
+# ------------------------------ DRAWING METHODS -----------------------------
 
     def draw_networks(self, ax1, ax2, colors):
         return self.__networks.draw_networks(self.__positions, ax1, ax2, colors)
