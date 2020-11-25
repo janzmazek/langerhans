@@ -10,7 +10,8 @@ import pickle
 from pathlib import Path
 import colorsys
 
-from .analysis import Analysis
+from langerhans.analysis import Analysis
+
 
 def lighten_color(color, amount=0.5):
     """
