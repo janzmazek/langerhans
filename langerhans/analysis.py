@@ -29,7 +29,8 @@ class Analysis(object):
         self.__settings = data.get_settings()
         self.__sampling = self.__settings["Sampling [Hz]"]
         self.__points = data.get_points()
-        self.__positions = positions[good_cells]*self.__settings["Distance [um]"]
+        distance = self.__settings["Distance [um]"]
+        self.__positions = positions[good_cells]*distance
         self.__cells = np.sum(good_cells)
 
         self.__filtered_slow = data.get_filtered_slow()[good_cells]
@@ -43,7 +44,10 @@ class Analysis(object):
     def build_networks(self):
         print("Building networks...")
         # Construct networks and build networks from data
-        self.__networks = Networks(self.__cells, self.__filtered_slow, self.__filtered_fast)
+        self.__networks = Networks(self.__cells,
+                                   self.__filtered_slow,
+                                   self.__filtered_fast
+                                   )
         self.__networks.build_networks()
 
 # ---------------------------- ANALYSIS FUNCTIONS ----------------------------
@@ -62,7 +66,7 @@ class Analysis(object):
 
         # Get the range of those indices as final output
         if M.any() > 0:
-            return np.where(M == True)[0]
+            return np.where(M is True)[0]
         else:
             return np.array([], dtype="int")  # No match found
 
@@ -223,38 +227,38 @@ class Analysis(object):
         stop = int(self.__activity[cell][1]*self.__sampling)
         bin_fast = self.__binarized_fast[cell][start:stop]
 
-        interspike_start = self.__search_sequence(bin_fast, [1, 0])
-        interspike_end = self.__search_sequence(bin_fast, [0, 1])
+        IS_start = self.__search_sequence(bin_fast, [1, 0])
+        IS_end = self.__search_sequence(bin_fast, [0, 1])
 
-        if interspike_start.size == 0 or interspike_end.size == 0:
+        if IS_start.size == 0 or IS_end.size == 0:
             return (np.nan, np.nan)
-        # First interspike_start must be before first interspike_end
-        if interspike_end[-1] < interspike_start[-1]:
-            interspike_start = interspike_start[:-1]
-        if interspike_start.size == 0:
+        # First IS_start must be before first interspike_end
+        if IS_end[-1] < IS_start[-1]:
+            IS_start = IS_start[:-1]
+        if IS_start.size == 0:
             return (np.nan, np.nan)
-        # Last interspike_start must be before last interspike_end
-        if interspike_end[0] < interspike_start[0]:
-            interspike_end = interspike_end[1:]
+        # Last IS_start must be before last interspike_end
+        if IS_end[0] < IS_start[0]:
+            IS_end = IS_end[1:]
 
-        assert interspike_start.size == interspike_end.size
+        assert IS_start.size == IS_end.size
 
-        interspike_lengths = [interspike_end[i]-interspike_start[i] for i in range(interspike_start.size)]
-        mean_interspike_interval = np.mean(interspike_lengths)
-        interspike_variation = np.std(interspike_lengths)/mean_interspike_interval
+        IS_lengths = [IS_end[i]-IS_start[i] for i in range(IS_start.size)]
+        mean_IS_interval = np.mean(IS_lengths)
+        IS_variation = np.std(IS_lengths)/mean_IS_interval
 
-        return (mean_interspike_interval, interspike_variation)
+        return (mean_IS_interval, IS_variation)
 
     def time(self, cell):
         bin_fast = self.__binarized_fast[cell]
         time = {}
-        stimulation_start = self.__settings["Stimulation [frame]"][0]
-        stimulation_end = self.__settings["Stimulation [frame]"][1]
+        stim_start = self.__settings["Stimulation [frame]"][0]
+        stim_end = self.__settings["Stimulation [frame]"][1]
 
-        time["plateau_start"] = self.__activity[cell][0] - stimulation_start/self.__sampling
-        time["plateau_end"] = self.__activity[cell][1] - stimulation_end/self.__sampling
+        time["plateau_start"] = self.__activity[cell][0] - stim_start
+        time["plateau_end"] = self.__activity[cell][1] - stim_end
 
-        fast_peaks = self.__search_sequence(bin_fast[stimulation_start:], [0, 1])
+        fast_peaks = self.__search_sequence(bin_fast[stim_start:], [0, 1])
         if len(fast_peaks) < 3:
             time["spike_start"] = np.nan
         else:
@@ -277,8 +281,8 @@ class Analysis(object):
             raise ValueError("Network is not built.")
         return self.__networks.nearest_neighbour_degree(cell)
 
-# ----------------------------- ANALYSIS METHODS -----------------------------
-# ----------------------------- Spikes vs phases -----------------------------
+# ----------------------------- ANALYSIS METHODS ------------------------------
+# ----------------------------- Spikes vs phases ------------------------------
 
     def spikes_vs_phase(self, mode="normal"):
         phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
@@ -316,7 +320,7 @@ class Analysis(object):
             result = spikes
         return (phases, result)
 
-# ------------------------- Correlation vs distance -------------------------- #
+# ------------------------- Correlation vs distance ---------------------------
 
     def correlation_vs_distance(self):
         A_dst = self.__distances_matrix()
@@ -334,104 +338,137 @@ class Analysis(object):
                 correlations_fast.append(corr_fast)
         return (distances, correlations_slow, correlations_fast)
 
-# -------------------------- WAVE DETECTION METHODS -------------------------- #
-    def wave_detection(self, Tth=0.5, Nth=0.1):
+# -------------------------- WAVE DETECTION METHODS ---------------------------
+    def wave_detection(self, cell_th=0.1, time_th=0.5):
+        print("Detecting waves")
         event_num = []
 
-        Nth = int(Nth*self.__cells)
-        act_sig = np.zeros_like(self.__binarized_fast, int)
-        frameTh = int(Tth*self.__sampling)
+        cell_th = int(cell_th*self.__cells)
+        bin_sig = self.__binarized_fast
+        act_sig = np.zeros_like(bin_sig, int)
+        frame_th = int(time_th*self.__sampling)
         R = self.__distances_matrix()
-        Rth = np.average(R)-1.0*np.std(R)
+        Rth = np.average(R) - np.std(R)
 
-        for i in range(self.__points):  # zanka po frame-ih
-            nonzero = np.array(np.nonzero(self.__binarized_fast[:, i]))[0]
+        neighbours = []
+        for j in range(self.__cells):
+            neighbours.append(np.where((R[:, j] < Rth) & (R[:, j] != 0))[0])
 
-            if(i == 0):  # OBDELA PRVI FRAME V BINSIG MATRIKI
+        nonzero = {}
+        # Poisce vse frejme, kjer je kakšna celica aktivna
+        nonzero_frames = np.where(bin_sig == 1)[1]
+        # zanka po frejmih z aktivnostjo
+        for frame in nonzero_frames:
+            # v frejmu z aktivnostjo poisce vse celice, ki so dejansko aktivne
+            nonzero[frame] = list(np.where(bin_sig[:, frame] == 1)[0])
+
+        counter = 0
+        # zanka po frame-ih z aktivnostjo
+        for frame in nonzero:
+            # Obdela prvi aktivni frame v binsig matriki
+            if counter == 0:
                 k = 1
-                for j in nonzero:
-                    if(self.__binarized_fast[j, i] != 0):
-                        act_sig[j, i] = k
-                        k += 1
+                # Zanka po aktivnih celicah v frejmu
+                for cell in nonzero[frame]:
+                    act_sig[cell, frame] = k
+                    k += 1
 
-                for nn in nonzero:
-                    for nnn in nonzero:
-                        if(act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and nn != nnn):
-                            act_sig[nn, i] = min(act_sig[nn, i], act_sig[nnn, i])
-                            act_sig[nnn, i] = act_sig[nn, i]
+                for nn in nonzero[frame]:
+                    current = set(nonzero[frame])
+                    neighbours_nn = set(neighbours[nn])
+                    for nnn in list(neighbours_nn.intersection(current)):
+                        act_sig[nn, frame] = min(act_sig[nn, frame],
+                                                 act_sig[nnn, frame]
+                                                 )
+                        act_sig[nnn, frame] = act_sig[nn, frame]
 
-                un_num = np.unique(act_sig[:, i])
-                for value in un_num:
-                    if(value not in event_num):
-                        event_num.append(value)
+                un_num = np.unique(act_sig[:, frame])
+                event_num = list(set(event_num).union(set(un_num)))
 
                 max_event_num = max(event_num)
+                counter += 1
 
-            if i != 0:
+            else:
                 k = max_event_num + 1
-                for j in nonzero:
-                    if(self.__binarized_fast[j, i] != 0 and self.__binarized_fast[j, i-1] == 0):  # če je celica v tem frameu aktivna v prejsnjem pa ne ji dodeli novo stevilko dogodka
-                        act_sig[j, i] = k
+                # Zanka po aktivnih celicah
+                for cell in nonzero[frame]:
+                    # Če je celica v tem frameu aktivna, v prejsnjem pa ne, ji
+                    # dodeli novo številko dogodka
+                    if bin_sig[cell, frame-1] == 0:
+                        act_sig[cell, frame] = k
                         k += 1
-                    if(self.__binarized_fast[j, i] != 0 and self.__binarized_fast[j, i-1] != 0):  # če je celica v tem frameu aktivna in je to bila tudi v prejšnjem se ji pripise prejsnja stevilka dogodka
-                        act_sig[j, i] = act_sig[j, i-1]
+                    # Če je celica bila že v prejsnjem frejmu aktivna, ji
+                    # prepiše indeks dogodka
+                    else:
+                        act_sig[cell, frame] = act_sig[cell-1, frame]
 
-                if i > frameTh:
-                    for nn in nonzero:
-                        for nnn in nonzero:
-                            if act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and act_sig[nn, i-1] != 0 and np.sum(self.__binarized_fast[nn, i-frameTh:i+1]) <= frameTh and act_sig[nnn, i-1] == 0 and nn != nnn:
-                                act_sig[nnn, i] = act_sig[nn, i]
-                            if act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and act_sig[nn, i-1] == 0 and act_sig[nnn, i-1] != 0 and np.sum(self.__binarized_fast[nnn, i-frameTh:i+1]) <= frameTh and nn != nnn:
-                                act_sig[nn, i] = act_sig[nnn, i]
-                            if act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and act_sig[nn, i-1] == 0 and act_sig[nnn, i-1] == 0 and nn != nnn:
-                                act_sig[nn, i] = min(act_sig[nn, i], act_sig[nnn, i])
-                                act_sig[nnn, i] = act_sig[nn, i]
-                if i <= frameTh:
-                    for nn in nonzero:
-                        for nnn in nonzero:
-                            if act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and act_sig[nn, i-1] != 0 and act_sig[nnn, i-1] == 0 and nn != nnn:
-                                act_sig[nnn, i] = act_sig[nn, i]
-                            if act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and act_sig[nn, i-1] == 0 and act_sig[nnn, i-1] != 0 and nn != nnn:
-                                act_sig[nn, i] = act_sig[nnn, i]
-                            if act_sig[nn, i] != 0 and act_sig[nnn, i] != 0 and R[nn, nnn] < Rth and act_sig[nn, i-1] == 0 and act_sig[nnn, i-1] == 0 and nn != nnn:
-                                act_sig[nn, i] = min(act_sig[nn, i], act_sig[nnn, i])
-                                act_sig[nnn, i] = act_sig[nn, i]
+                for nn in nonzero[frame]:
+                    current = set(nonzero[frame])
+                    neighbours_nn = set(neighbours[nn])
+                    for nnn in list(neighbours_nn.intersection(current)):
+                        if act_sig[nn, frame] != 0 and \
+                                act_sig[nnn, frame] != 0 and \
+                                act_sig[nn, frame-1] != 0 and \
+                                np.sum(bin_sig[nn, frame-frame_th:frame+1]) \
+                                <= frame_th and \
+                                act_sig[nnn, frame-1] == 0 and \
+                                nn != nnn:
+                            act_sig[nnn, frame] = act_sig[nn, frame]
+                        if act_sig[nn, frame] != 0 and \
+                                act_sig[nnn, frame] != 0 and \
+                                act_sig[nn, frame-1] == 0 and \
+                                act_sig[nnn, frame-1] != 0 and \
+                                np.sum(bin_sig[nnn, frame-frame_th:frame+1]) \
+                                <= frame_th and \
+                                nn != nnn:
+                            act_sig[nn, frame] = act_sig[nnn, frame]
+                        if act_sig[nn, frame] != 0 and \
+                                act_sig[nnn, frame] != 0 and \
+                                act_sig[nn, frame-1] == 0 and \
+                                act_sig[nnn, frame-1] == 0 and \
+                                nn != nnn:
+                            act_sig[nn, frame] = min(act_sig[nn, frame],
+                                                     act_sig[nnn, frame]
+                                                     )
+                            act_sig[nnn, frame] = act_sig[nn, frame]
 
-                un_num = np.unique(act_sig[:, i])
-                for value in un_num:
-                    if(value not in event_num):
-                        event_num.append(value)
+                un_num = np.unique(act_sig[:, frame])
+                event_num = list(set(event_num).union(set(un_num)))
 
                 max_event_num = max(event_num)
+                counter += 1
         return act_sig
 
-    def wave_characterization(self, Tth=0.5, Nth=0.1):
-        act_sig = self.wave_detection(Tth, Nth)
-        dogodki = np.unique(act_sig[act_sig != 0])  # vse stevilke dogodkov razen nicle - 0=neaktivne celice
+    def wave_characterization(self, time_th=0.5, cell_th=0.1):
+        act_sig = self.wave_detection(cell_th, time_th)
+        print("Characterizing waves")
+        # vse stevilke dogodkov razen nicle - 0=neaktivne celice
+        un_events = np.unique(act_sig[act_sig != 0])
 
         events = []
         all_events = []
 
-        for i in dogodki:
-            cells, frames = np.where(act_sig == i)
+        for e in un_events:
+            e = int(e)
+            cells, frames = np.where(act_sig == e)
             active_cell_number = np.unique(cells).size
 
-            start_time, end_time = np.amin(frames), np.amax(frames)
+            start_time, end_time = np.min(frames), np.max(frames)
 
             characteristics = {
-                "event number": i,
+                "event number": e,
                 "start time": start_time,
                 "end time": end_time,
                 "active cell number": np.unique(cells).size,
-                "relative active cell number": np.unique(cells).size/self.__cells
+                "rel active cell number": np.unique(cells).size/self.__cells
             }
-            if(active_cell_number > Nth):
+            if(active_cell_number > cell_th):
                 events.append(characteristics)
             all_events.append(characteristics)
 
         return (events, all_events)
 
-# ------------------------------ DRAWING METHODS -----------------------------
+# ------------------------------ DRAWING METHODS ------------------------------
 
     def draw_networks(self, ax1, ax2, colors):
         return self.__networks.draw_networks(
