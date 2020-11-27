@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
       name = "langerhans",
-      version = "1.3.0",
+      version = "1.4.0",
       description = "Analyzer for the calcium signals of Islets of Langerhans.",
       author = "Jan Zmazek",
       url = "https://github.com/janzmazek/cell-networks",
