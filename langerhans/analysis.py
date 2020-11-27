@@ -18,6 +18,7 @@ class Analysis(object):
         self.__binarized_slow = None
         self.__binarized_fast = None
         self.__activity = None
+        self.__act_sig = None
 
         self.__networks = False
 
@@ -437,20 +438,21 @@ class Analysis(object):
 
                 max_event_num = max(event_num)
                 counter += 1
-        return act_sig
+        self.__act_sig = act_sig
 
     def wave_characterization(self, time_th=0.5, cell_th=0.1):
-        act_sig = self.wave_detection(cell_th, time_th)
+        if self.__act_sig is None:
+            self.wave_detection(cell_th, time_th)
         print("Characterizing waves")
         # vse stevilke dogodkov razen nicle - 0=neaktivne celice
-        un_events = np.unique(act_sig[act_sig != 0])
+        un_events = np.unique(self.__act_sig[self.__act_sig != 0])
 
         events = []
         all_events = []
 
         for e in un_events:
             e = int(e)
-            cells, frames = np.where(act_sig == e)
+            cells, frames = np.where(self.__act_sig == e)
             active_cell_number = np.unique(cells).size
 
             start_time, end_time = np.min(frames), np.max(frames)
@@ -462,7 +464,7 @@ class Analysis(object):
                 "active cell number": np.unique(cells).size,
                 "rel active cell number": np.unique(cells).size/self.__cells
             }
-            if(active_cell_number > cell_th):
+            if active_cell_number > cell_th:
                 events.append(characteristics)
             all_events.append(characteristics)
 
@@ -474,3 +476,53 @@ class Analysis(object):
         return self.__networks.draw_networks(
             self.__positions, ax1, ax2, colors
             )
+
+    def plot_events(self):
+        events, all_events = self.wave_characterization()
+        for e in (events, all_events):
+            rast_plot = []
+            zacetki = []
+            k = 0
+            kk = 0
+            for c in e:
+                zacetki.append([])
+                event_num = int(c["event number"])
+                start_time = int(c["start time"])
+                end_time = int(c["end time"])
+                active_cell_number = c["active cell number"]
+
+                step = 0
+                used = []
+                init_cells = 0
+                for i in range(self.__cells):
+                    for j in range(start_time, end_time+1, 1):
+                        if self.__act_sig[i, j] == event_num and i not in used:
+                            rast_plot.append([])
+                            rast_plot[k].append(
+                                (start_time+step)/self.__sampling
+                                )
+                            rast_plot[k].append(i)
+                            rast_plot[k].append(event_num)
+                            rast_plot[k].append(active_cell_number)
+                            used.append(i)
+                            k += 1
+                    init_cells += 1
+                    step += 1
+
+                zacetki[kk].append(start_time/self.__sampling)
+                zacetki[kk].append(-5)
+                zacetki[kk].append(event_num)
+                kk += 1
+
+            fzacetki = np.array(zacetki, float)
+            frast_plot = np.array(rast_plot, float)
+
+            fig = plt.figure(figsize=(8, 4))
+            ax = fig.add_subplot(111)
+            ax.scatter(frast_plot[:, 0], frast_plot[:, 1],
+                       s=0.5, c=frast_plot[:, 2], marker='o'
+                       )
+            ax.scatter(fzacetki[:, 0], fzacetki[:, 1], s=10.0, marker='+')
+            ax.set_xlabel('Time (s)')
+            ax.set_ylabel('Cell $i$')
+            plt.show()
