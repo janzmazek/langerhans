@@ -312,18 +312,27 @@ class Data(object):
         ax12.set_title("Distribution of active signal")
         ax2 = fig.add_subplot(gs[1, :])
 
-        delta_noise = noise_bins[1]-noise_bins[0]
+        delta_noise = noise_bins[1] - noise_bins[0]
         ax11.bar(noise_bins[:-1], noise_h, delta_noise, color="grey")
+        ax11.axvline(noise_params[1], c="k", label="Mean")
+        ax11.axvspan(noise_params[1]-noise_params[2],
+                     noise_params[1]+noise_params[2],
+                     alpha=0.5, color=EXCLUDE_COLOR, label="STD")
+        ax11.legend()
 
         delta_spikes = spikes_bins[1]-spikes_bins[0]
-        ax12.bar(spikes_bins[:-1], spikes_h, delta_spikes, color="grey")
+        ax12.bar(spikes_bins[:-1], spikes_h, delta_spikes,
+                 color="grey", label="Skew: {:.2f}".format(spikes_params[0])
+                 )
+        ax12.axvline(spikes_params[1], c="k", label="Mean")
+        ax12.axvline(spikes_params[2], c="k", ls="--", label="STD")
+        ax12.legend()
 
         self.plot(ax2, i, plots=("raw, fast"), protocol=True)
-        std = noise_params[2]
-        ax2.fill_between(self.__time, -3*std, 3*std,
-                         color="C3", alpha=0.25
+        ax2.fill_between(self.__time, -3*noise_params[2], 3*noise_params[2],
+                         color="C3", alpha=0.25, label=r"$3\cdot$STD"
                          )
-        print(spikes_params[0])
+        ax2.legend()
         return fig
 
 # ---------- Exclude ---------- #
@@ -341,15 +350,15 @@ class Data(object):
             np.sum(self.__good_cells), self.__cells)
             )
 
-    def exclude(self, cell):
-        if cell not in range(self.__cells):
+    def exclude(self, i):
+        if i not in range(self.__cells):
             raise ValueError("Cell not in range.")
-        self.__good_cells[cell] = False
+        self.__good_cells[i] = False
 
-    def unexclude(self, cell):
-        if cell not in range(self.__cells):
+    def unexclude(self, i):
+        if i not in range(self.__cells):
             raise ValueError("Cell not in range.")
-        self.__good_cells[cell] = True
+        self.__good_cells[i] = True
 
 # ---------- Binarize ---------- #
 
@@ -375,18 +384,21 @@ class Data(object):
     def binarize_fast(self):
         if self.__distributions is False or self.__filtered_fast is False:
             raise ValueError("No distribution or filtered data.")
-        self.__binarized_fast = np.zeros((self.__cells, self.__points))
+
+        spikes_th = self.__settings["Exclude"]["Spikes threshold"]
+        self.__binarized_fast = np.zeros((self.__cells, self.__points), int)
         for cell in range(self.__cells):
             threshold = 3*self.__distributions[cell]["noise_params"][2]
             self.__binarized_fast[cell] = np.where(
                 self.__filtered_fast[cell] > threshold, 1, 0
                 )
-        self.__binarized_fast = self.__binarized_fast.astype(int)
+            if np.sum(self.__binarized_fast[cell]) < spikes_th*self.__points:
+                self.__good_cells[cell] = False
 
     def binarize_slow(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
-        self.__binarized_slow = np.zeros((self.__cells, self.__points))
+        self.__binarized_slow = np.zeros((self.__cells, self.__points), int)
         for cell in range(self.__cells):
             signal = self.__filtered_slow[cell]
             heavisided_gradient = np.heaviside(np.gradient(signal), 0)
@@ -438,15 +450,15 @@ class Data(object):
                 self.__good_cells[cell] = False
         self.__activity = np.array(self.__activity)
 
-    def plot_binarized(self, cell):
+    def plot_binarized(self, i):
         if self.__binarized_slow is False or self.__binarized_fast is False:
             raise ValueError("No binarized data!")
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+        fig, (ax1, ax2) = plt.subplots(3, 1, sharex=True)
         fig.suptitle("Binarized data")
 
-        self.plot(ax1, cell, plots=("slow", "bin_slow"))
-        self.plot(ax2, cell, plots=("fast", "bin_fast"), protocol=False)
+        self.plot(ax1, i, plots=("slow", "bin_slow"))
+        self.plot(ax2, i, plots=("fast", "bin_fast"), protocol=False)
 
         return fig
 

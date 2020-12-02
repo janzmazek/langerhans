@@ -87,6 +87,7 @@ class Analysis(object):
     def get_positions(self): return self.__positions
     def get_filtered_slow(self): return self.__filtered_slow
     def get_filtered_fast(self): return self.__filtered_fast
+    def get_act_sig(self): return self.__act_sig
     def get_networks(self): return self.__networks
 
     def get_parameters(self):
@@ -340,28 +341,27 @@ class Analysis(object):
         return (distances, correlations_slow, correlations_fast)
 
 # -------------------------- WAVE DETECTION METHODS ---------------------------
-    def wave_detection(self, cell_th=0.1, time_th=0.5):
+    def wave_detection(self, time_th=0.5):
         print("Detecting waves")
         event_num = []
 
-        cell_th = int(cell_th*self.__cells)
         bin_sig = self.__binarized_fast
         act_sig = np.zeros_like(bin_sig, int)
         frame_th = int(time_th*self.__sampling)
         R = self.__distances_matrix()
-        Rth = np.average(R) - np.std(R)
+        R_th = np.average(R) - np.std(R)
 
         neighbours = []
-        for j in range(self.__cells):
-            neighbours.append(np.where((R[:, j] < Rth) & (R[:, j] != 0))[0])
+        for i in range(self.__cells):
+            neighbours.append(np.where((R[i, :] < R_th) & (R[i, :] != 0))[0])
 
         nonzero = {}
         # Poisce vse frejme, kjer je kakšna celica aktivna
-        nonzero_frames = np.where(bin_sig == 1)[1]
+        nonzero_frames = np.where(bin_sig.T == 1)[0]
         # zanka po frejmih z aktivnostjo
         for frame in nonzero_frames:
             # v frejmu z aktivnostjo poisce vse celice, ki so dejansko aktivne
-            nonzero[frame] = list(np.where(bin_sig[:, frame] == 1)[0])
+            nonzero[frame] = list(np.where(bin_sig.T[frame, :] == 1)[0])
 
         counter = 0
         # zanka po frame-ih z aktivnostjo
@@ -389,7 +389,7 @@ class Analysis(object):
                 max_event_num = max(event_num)
                 counter += 1
 
-            else:
+            if counter != 0:
                 k = max_event_num + 1
                 # Zanka po aktivnih celicah
                 for cell in nonzero[frame]:
@@ -401,7 +401,7 @@ class Analysis(object):
                     # Če je celica bila že v prejsnjem frejmu aktivna, ji
                     # prepiše indeks dogodka
                     else:
-                        act_sig[cell, frame] = act_sig[cell-1, frame]
+                        act_sig[cell, frame] = act_sig[cell, frame-1]
 
                 for nn in nonzero[frame]:
                     current = set(nonzero[frame])
@@ -440,17 +440,19 @@ class Analysis(object):
                 counter += 1
         self.__act_sig = act_sig
 
-    def wave_characterization(self, time_th=0.5, cell_th=0.1):
+    def wave_characterization(self, big_th=0.45, small_th=0.1, time_th=0.5):
         if self.__act_sig is None:
-            self.wave_detection(cell_th, time_th)
+            self.wave_detection(time_th)
         print("Characterizing waves")
         # vse stevilke dogodkov razen nicle - 0=neaktivne celice
-        un_events = np.unique(self.__act_sig[self.__act_sig != 0])
+        events = np.unique(self.__act_sig[self.__act_sig != 0])
+        # print(events)
+        # print(events.size, np.min(events), np.max(events))
 
-        events = []
+        big_events = []
         all_events = []
 
-        for e in un_events:
+        for e in events:
             e = int(e)
             cells, frames = np.where(self.__act_sig == e)
             active_cell_number = np.unique(cells).size
@@ -461,14 +463,15 @@ class Analysis(object):
                 "event number": e,
                 "start time": start_time,
                 "end time": end_time,
-                "active cell number": np.unique(cells).size,
-                "rel active cell number": np.unique(cells).size/self.__cells
+                "active cell number": active_cell_number,
+                "rel active cell number": active_cell_number/self.__cells
             }
-            if active_cell_number > cell_th:
-                events.append(characteristics)
-            all_events.append(characteristics)
+            if active_cell_number > int(big_th*self.__cells):
+                big_events.append(characteristics)
+            if active_cell_number > int(small_th*self.__cells):
+                all_events.append(characteristics)
 
-        return (events, all_events)
+        return (big_events, all_events)
 
 # ------------------------------ DRAWING METHODS ------------------------------
 
@@ -477,8 +480,7 @@ class Analysis(object):
             self.__positions, ax1, ax2, colors
             )
 
-    def plot_events(self):
-        events, all_events = self.wave_characterization()
+    def plot_events(self, events, all_events):
         for e in (events, all_events):
             rast_plot = []
             zacetki = []
