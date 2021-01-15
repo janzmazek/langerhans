@@ -29,6 +29,7 @@ SAMPLE_SETTINGS = {
         },
     "Distance [um]": 1
     }
+STD_RATIO = 2
 
 
 class Data(object):
@@ -307,9 +308,9 @@ class Data(object):
         fig = plt.figure(constrained_layout=True)
         gs = GridSpec(2, 2, figure=fig)
         ax11 = fig.add_subplot(gs[0, 0])
-        ax11.set_title("Distribution of noise")
+        ax11.set_title("Distribution of pre-stimulatory signal")
         ax12 = fig.add_subplot(gs[0, 1])
-        ax12.set_title("Distribution of active signal")
+        ax12.set_title("Distribution of post-stimulatoet")
         ax2 = fig.add_subplot(gs[1, :])
 
         delta_noise = noise_bins[1] - noise_bins[0]
@@ -317,7 +318,9 @@ class Data(object):
         ax11.axvline(noise_params[1], c="k", label="Mean")
         ax11.axvspan(noise_params[1]-noise_params[2],
                      noise_params[1]+noise_params[2],
-                     alpha=0.5, color=EXCLUDE_COLOR, label="STD")
+                     alpha=0.5, color=EXCLUDE_COLOR,
+                     label="STD: {:.2f}".format(noise_params[2])
+                     )
         ax11.legend()
 
         delta_spikes = spikes_bins[1]-spikes_bins[0]
@@ -325,7 +328,9 @@ class Data(object):
                  color="grey", label="Skew: {:.2f}".format(spikes_params[0])
                  )
         ax12.axvline(spikes_params[1], c="k", label="Mean")
-        ax12.axvline(spikes_params[2], c="k", ls="--", label="STD")
+        ax12.axvline(spikes_params[2], c="k", ls="--",
+                label="STD: {:.2f}".format(spikes_params[2])
+                )
         ax12.legend()
 
         self.plot(ax2, i, plots=("raw, fast"), protocol=True)
@@ -344,10 +349,13 @@ class Data(object):
 
         for cell in range(self.__cells):
             skew = self.__distributions[cell]["spikes_params"][0]
-            if skew < score_threshold:
+            noise_std = self.__distributions[cell]["noise_params"][2]
+            spikes_std = self.__distributions[cell]["spikes_params"][2]
+            if skew < score_threshold and spikes_std < STD_RATIO*noise_std:
                 self.__good_cells[cell] = False
-        print("{} of {} good cells".format(
-            np.sum(self.__good_cells), self.__cells)
+        print("{} of {} good cells ({:0.0f}%)".format(
+            np.sum(self.__good_cells), self.__cells,
+            np.sum(self.__good_cells)/self.__cells*100)
             )
 
     def exclude(self, i):
@@ -434,15 +442,17 @@ class Data(object):
             sampling = self.__settings["Sampling [Hz]"]
             stimulation = self.__settings["Stimulation [frame]"][0]
             lower_limit = cumsum[cumsum < 0.1*cumsum[-1]].size
-            lower_limit /= sampling
+            lower_limit /= sampling  # lower limit in seconds
             upper_limit = (cumsum.size - cumsum[cumsum > 0.9*cumsum[-1]].size)
-            upper_limit /= sampling
+            upper_limit /= sampling  # upper limit in seconds
 
             def box(t, a, t_start, t_end):
                 return a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
             res = differential_evolution(
                 lambda p: np.sum((box(self.__time, *p) - data)**2),
-                [[0, 100], [0, lower_limit], [upper_limit, self.__time[-1]]]
+                [[0, 100],
+                 [0, lower_limit+1],
+                 [upper_limit-1, self.__time[-1]]]
                 )
             self.__activity.append(res.x[1:])
 
@@ -454,7 +464,7 @@ class Data(object):
         if self.__binarized_slow is False or self.__binarized_fast is False:
             raise ValueError("No binarized data!")
 
-        fig, (ax1, ax2) = plt.subplots(3, 1, sharex=True)
+        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
         fig.suptitle("Binarized data")
 
         self.plot(ax1, i, plots=("slow", "bin_slow"))
