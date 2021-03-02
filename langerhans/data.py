@@ -26,7 +26,8 @@ SAMPLE_SETTINGS = {
         "Score threshold": 1,
         "Spikes threshold": 0.01
         },
-    "Distance [um]": 1
+    "Distance [um]": 1,
+    "Plateau [s]": [0, 0]
     }
 STD_RATIO = 2
 
@@ -40,7 +41,7 @@ class Data(object):
         self.__signal = False
         self.__mean_islet = False
         self.__time = False
-        self.__settings = False
+        self.__settings = SAMPLE_SETTINGS
 
         self.__points = False
         self.__cells = False
@@ -59,8 +60,6 @@ class Data(object):
         self.__signal = np.around(signal[:, 1:].transpose(), decimals=3)
         self.__mean_islet = np.mean(self.__signal, 0)  # average over 0 axis
         self.__mean_islet = self.__mean_islet - np.mean(self.__mean_islet)
-        if self.__settings is False:
-            self.__settings = SAMPLE_SETTINGS
         sampling = self.__settings["Sampling [Hz]"]
         self.__time = np.arange(len(self.__signal[0]))*(1/sampling)
 
@@ -69,21 +68,20 @@ class Data(object):
 
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
-    def import_settings(self, settings=SAMPLE_SETTINGS):
-        if "Sampling [Hz]" not in settings and \
-                "Stimulation [frame]" not in settings and \
-                "Filter" not in settings and \
-                "Exclude" not in settings and \
-                "Distance [um]" not in settings:
-            raise ValueError("Bad keys in settings.")
-        if "Slow [Hz]" not in settings["Filter"] and \
-                "Fast [Hz]" not in settings["Filter"] and \
-                "Plot [s]" not in settings["Filter"]:
-            raise ValueError("Bad keys in settings[filter].")
-        if "Score threshold" not in settings["Exclude"] and \
-                "Spikes threshold" not in settings["Exclude"]:
-            raise ValueError("Bad keys in settings[exclude].")
-        self.__settings = settings
+    def import_settings(self, settings):
+        for key in settings:
+            if key in SAMPLE_SETTINGS:
+                if isinstance(key, dict):
+                    for subkey in key:
+                        if subkey in SAMPLE_SETTINGS[key]:
+                            self.__settings[subkey] = settings[subkey]
+                else:
+                    self.__settings[key] = settings[key]
+        plateau = self.__settings["Plateau [s]"]
+        if plateau[0] != 0 or plateau[1] != 0:
+            self.__activity = np.array(
+                [plateau for cell in range(self.__cells)]
+                )
 
     def import_good_cells(self, cells):
         if self.__signal is False:
@@ -116,136 +114,6 @@ class Data(object):
     def get_binarized_fast(self): return self.__binarized_fast
     def get_activity(self): return self.__activity
     def get_good_cells(self): return self.__good_cells
-
-# ----------------------------- PLOTTING METHODS ------------------------------
-
-    def plot(self, ax, cell,
-             plots=("mean", "raw", "slow", "fast"), protocol=True, noise=False
-             ):
-        time = self.__time
-        sampling = self.__settings["Sampling [Hz]"]
-        glucose = self.__settings["Glucose [mM]"]
-        TA, TAE = self.__settings["Stimulation [frame]"]
-        TA, TAE = TA/sampling, TAE/sampling
-
-        if "mean" in plots:
-            signal = self.__mean_islet
-            signal = signal/np.max(signal)
-            ax.plot(time, signal, "k", alpha=0.25, lw=0.1)
-        if "raw" in plots:
-            signal = self.__signal[cell]
-            signal = signal - np.mean(signal)
-            signal = signal/np.max(signal)
-            ax.plot(time, signal, "k", alpha=0.5, lw=0.1)
-        if "slow" in plots:
-            filtered_slow = self.__filtered_slow[cell]
-            filtered_slow = filtered_slow/np.max(filtered_slow)
-            ax.plot(time, filtered_slow, color="C0", lw=2)
-        if "fast" in plots:
-            filtered_fast = self.__filtered_fast[cell]
-            filtered_fast = filtered_fast/np.max(filtered_fast)
-            ax.plot(time, filtered_fast, color="C3", lw=0.2)
-        if "bin_slow" in plots:
-            binarized_slow = self.__binarized_slow[cell]
-            ax2 = ax.twinx()
-            ax2.plot(time, binarized_slow, color="k", lw=1)
-            ax2.set_ylabel("Phase")
-        if "bin_fast" in plots:
-            # threshold = self.__distributions[cell]["noise_params"][2]
-            filtered_fast = self.__filtered_fast[cell]
-            binarized_fast = self.__binarized_fast[cell]/np.max(filtered_fast)
-            binarized_fast *= 0.5  # *=threshold
-            ax.plot(time, binarized_fast, color="k", lw=1)
-            ax2 = ax.twinx()
-            ax2.set_ylabel("Action potentials")
-
-        ax.set_xlim(0, self.__time[-1])
-        ax.set_ylim(None, 1.1)
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Amplitude")
-
-        frame_start = self.__settings["Stimulation [frame]"][0]
-        frame_end = self.__settings["Stimulation [frame]"][1]
-        sampling = self.__settings["Sampling [Hz]"]
-        ax.axvline(frame_start/sampling, c="grey")
-        ax.axvline(frame_end/sampling, c="grey")
-
-        if self.__good_cells[cell]:
-            if self.__activity is not False:
-                border = self.__activity[cell]
-                ax.axvspan(0, border[0], alpha=0.25, color="grey")
-                ax.axvspan(
-                    border[1], self.__time[-1], alpha=0.25, color="grey"
-                    )
-        else:
-            ax.axvspan(0, self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
-
-        if protocol and TA != 0 and TAE != 0:
-            color = "C0" if glucose == 8 else "C3"
-            # tform = transforms.blended_transform_factory(
-            # ax.transData, ax.transAxes
-            # )
-
-            rectangles = {
-                '': patches.Rectangle((0, 1.1), TA, 0.15,
-                                      color='grey', alpha=0.5,
-                                      transform=ax.transData, clip_on=False
-                                      ),
-                '{} mM'.format(glucose): patches.Rectangle(
-                                      (TA, 1.1), TAE-TA, 0.3,
-                                      color=color, alpha=0.8,
-                                      transform=ax.transData, clip_on=False
-                                      ),
-                '6 mM': patches.Rectangle((TAE, 1.1), time[-1]-TAE, 0.15,
-                                          color='grey', alpha=0.5,
-                                          transform=ax.transData, clip_on=False
-                                          )
-                }
-            for r in rectangles:
-                ax.add_artist(rectangles[r])
-                rx, ry = rectangles[r].get_xy()
-                cx = rx + rectangles[r].get_width()/2.0
-                cy = ry + rectangles[r].get_height()/2.0
-                ax.annotate(r, (cx, cy), color='k', fontsize=12,
-                            ha='center', va='center', xycoords=ax.transData,
-                            annotation_clip=False
-                            )
-        if noise:
-            if self.__distributions is False:
-                raise ValueError("No distributions data.")
-            noise_params = self.__distributions[cell]["noise_params"]
-            ax.fill_between(self.__time, -3*noise_params[2], 3*noise_params[2],
-                            color="C3", alpha=0.25, label=r"$3\cdot$STD"
-                            )
-
-    def plot_distributions(self, ax1, ax2, i):
-        if self.__distributions is False:
-            raise ValueError("No distribution data.")
-
-        noise_params = self.__distributions[i]["noise_params"]
-        spikes_params = self.__distributions[i]["spikes_params"]
-        noise_h, noise_bins = self.__distributions[i]["noise_hist"]
-        spikes_h, spikes_bins = self.__distributions[i]["spikes_hist"]
-
-        delta_noise = noise_bins[1] - noise_bins[0]
-        ax1.bar(noise_bins[:-1], noise_h, delta_noise, color="grey")
-        ax1.axvline(noise_params[1], c="k", label="Mean")
-        ax1.axvspan(noise_params[1]-noise_params[2],
-                    noise_params[1]+noise_params[2],
-                    alpha=0.5, color=EXCLUDE_COLOR,
-                    label="STD: {:.2f}".format(noise_params[2])
-                    )
-        ax1.legend()
-
-        delta_spikes = spikes_bins[1]-spikes_bins[0]
-        ax2.bar(spikes_bins[:-1], spikes_h, delta_spikes,
-                color="grey", label="Skew: {:.2f}".format(spikes_params[0])
-                )
-        ax2.axvline(spikes_params[1], c="k", label="Mean")
-        ax2.axvline(spikes_params[2], c="k", ls="--",
-                    label="STD: {:.2f}".format(spikes_params[2])
-                    )
-        ax2.legend()
 
 # ----------------------------- ANALYSIS METHODS ------------------------------
 # ---------- Filter + smooth ---------- #
@@ -430,23 +298,6 @@ class Data(object):
             yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
 
-    def plot_events(self):
-        if self.__binarized_slow is False or self.__binarized_fast is False:
-            raise ValueError("No binarized data!")
-        fig, ax = plt.subplots()
-
-        bin_fast = self.__binarized_fast[self.__good_cells]
-        raster = [[] for i in range(len(bin_fast))]
-        sampling = self.__settings["Sampling [Hz]"]
-
-        for i in range(len(bin_fast)):
-            for j in range(len(bin_fast[0])):
-                if bin_fast[i, j] == 1:
-                    raster[i].append(j/sampling)
-
-        ax.eventplot(raster, linewidths=0.1)
-        return fig
-
     def is_analyzed(self):
         if self.__filtered_slow is False or self.__filtered_fast is False:
             return False
@@ -460,3 +311,149 @@ class Data(object):
             return False
         else:
             return True
+
+# ----------------------------- PLOTTING METHODS ------------------------------
+
+    def plot(self, ax, cell,
+             plots=("mean", "raw", "slow", "fast"), protocol=True, noise=False
+             ):
+        time = self.__time
+        sampling = self.__settings["Sampling [Hz]"]
+        glucose = self.__settings["Glucose [mM]"]
+        TA, TAE = self.__settings["Stimulation [frame]"]
+        TA, TAE = TA/sampling, TAE/sampling
+
+        if "mean" in plots:
+            signal = self.__mean_islet
+            signal = signal/np.max(signal)
+            ax.plot(time, signal, "k", alpha=0.25, lw=0.1)
+        if "raw" in plots:
+            signal = self.__signal[cell]
+            signal = signal - np.mean(signal)
+            signal = signal/np.max(signal)
+            ax.plot(time, signal, "k", alpha=0.5, lw=0.1)
+        if "slow" in plots:
+            filtered_slow = self.__filtered_slow[cell]
+            filtered_slow = filtered_slow/np.max(filtered_slow)
+            ax.plot(time, filtered_slow, color="C0", lw=2)
+        if "fast" in plots:
+            filtered_fast = self.__filtered_fast[cell]
+            filtered_fast = filtered_fast/np.max(filtered_fast)
+            ax.plot(time, filtered_fast, color="C3", lw=0.2)
+        if "bin_slow" in plots:
+            binarized_slow = self.__binarized_slow[cell]
+            ax2 = ax.twinx()
+            ax2.plot(time, binarized_slow, color="k", lw=1)
+            ax2.set_ylabel("Phase")
+        if "bin_fast" in plots:
+            # threshold = self.__distributions[cell]["noise_params"][2]
+            filtered_fast = self.__filtered_fast[cell]
+            binarized_fast = self.__binarized_fast[cell]/np.max(filtered_fast)
+            binarized_fast *= 0.5  # *=threshold
+            ax.plot(time, binarized_fast, color="k", lw=1)
+            ax2 = ax.twinx()
+            ax2.set_ylabel("Action potentials")
+
+        ax.set_xlim(0, self.__time[-1])
+        ax.set_ylim(None, 1.1)
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Amplitude")
+
+        frame_start = self.__settings["Stimulation [frame]"][0]
+        frame_end = self.__settings["Stimulation [frame]"][1]
+        sampling = self.__settings["Sampling [Hz]"]
+        ax.axvline(frame_start/sampling, c="grey")
+        ax.axvline(frame_end/sampling, c="grey")
+
+        if self.__good_cells[cell]:
+            if self.__activity is not False:
+                border = self.__activity[cell]
+                ax.axvspan(0, border[0], alpha=0.25, color="grey")
+                ax.axvspan(
+                    border[1], self.__time[-1], alpha=0.25, color="grey"
+                    )
+        else:
+            ax.axvspan(0, self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
+
+        if protocol and TA != 0 and TAE != 0:
+            color = "C0" if glucose == 8 else "C3"
+            # tform = transforms.blended_transform_factory(
+            # ax.transData, ax.transAxes
+            # )
+
+            rectangles = {
+                '': patches.Rectangle((0, 1.1), TA, 0.15,
+                                      color='grey', alpha=0.5,
+                                      transform=ax.transData, clip_on=False
+                                      ),
+                '{} mM'.format(glucose): patches.Rectangle(
+                                      (TA, 1.1), TAE-TA, 0.3,
+                                      color=color, alpha=0.8,
+                                      transform=ax.transData, clip_on=False
+                                      ),
+                '6 mM': patches.Rectangle((TAE, 1.1), time[-1]-TAE, 0.15,
+                                          color='grey', alpha=0.5,
+                                          transform=ax.transData, clip_on=False
+                                          )
+                }
+            for r in rectangles:
+                ax.add_artist(rectangles[r])
+                rx, ry = rectangles[r].get_xy()
+                cx = rx + rectangles[r].get_width()/2.0
+                cy = ry + rectangles[r].get_height()/2.0
+                ax.annotate(r, (cx, cy), color='k', fontsize=12,
+                            ha='center', va='center', xycoords=ax.transData,
+                            annotation_clip=False
+                            )
+        if noise:
+            if self.__distributions is False:
+                raise ValueError("No distributions data.")
+            noise_params = self.__distributions[cell]["noise_params"]
+            ax.fill_between(self.__time, -3*noise_params[2], 3*noise_params[2],
+                            color="C3", alpha=0.25, label=r"$3\cdot$STD"
+                            )
+
+    def plot_distributions(self, ax1, ax2, i):
+        if self.__distributions is False:
+            raise ValueError("No distribution data.")
+
+        noise_params = self.__distributions[i]["noise_params"]
+        spikes_params = self.__distributions[i]["spikes_params"]
+        noise_h, noise_bins = self.__distributions[i]["noise_hist"]
+        spikes_h, spikes_bins = self.__distributions[i]["spikes_hist"]
+
+        delta_noise = noise_bins[1] - noise_bins[0]
+        ax1.bar(noise_bins[:-1], noise_h, delta_noise, color="grey")
+        ax1.axvline(noise_params[1], c="k", label="Mean")
+        ax1.axvspan(noise_params[1]-noise_params[2],
+                    noise_params[1]+noise_params[2],
+                    alpha=0.5, color=EXCLUDE_COLOR,
+                    label="STD: {:.2f}".format(noise_params[2])
+                    )
+        ax1.legend()
+
+        delta_spikes = spikes_bins[1]-spikes_bins[0]
+        ax2.bar(spikes_bins[:-1], spikes_h, delta_spikes,
+                color="grey", label="Skew: {:.2f}".format(spikes_params[0])
+                )
+        ax2.axvline(spikes_params[1], c="k", label="Mean")
+        ax2.axvline(spikes_params[2], c="k", ls="--",
+                    label="STD: {:.2f}".format(spikes_params[2])
+                    )
+        ax2.legend()
+
+    def plot_events(self, ax):
+        if self.__binarized_slow is False or self.__binarized_fast is False:
+            raise ValueError("No binarized data!")
+
+        bin_fast = self.__binarized_fast[self.__good_cells]
+        raster = [[] for i in range(len(bin_fast))]
+        sampling = self.__settings["Sampling [Hz]"]
+
+        for i in range(len(bin_fast)):
+            for j in range(len(bin_fast[0])):
+                yield (i*len(bin_fast[0])+j+1)/len(bin_fast)/len(bin_fast[0])
+                if bin_fast[i, j] == 1:
+                    raster[i].append(j/sampling)
+
+        ax.eventplot(raster, linewidths=0.1)
