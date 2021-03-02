@@ -105,5 +105,5 @@ class Networks(object):
         return (R_slow_upper.mean(), R_fast_upper.mean())
 
     def draw_networks(self, positions, ax1, ax2, colors):
-        nx.draw(self.__G_slow, pos=positions, ax=ax1, with_labels=True, node_size=50, width=0.25, font_size=3, node_color=colors[0])
-        nx.draw(self.__G_fast, pos=positions, ax=ax2, with_labels=True, node_size=50, width=0.25, font_size=3, node_color=colors[1])
+        nx.draw(self.__G_slow, pos=positions, ax=ax1, with_labels=False, node_size=50, width=0.25, font_size=3, node_color=colors[0])
+        nx.draw(self.__G_fast, pos=positions, ax=ax2, with_labels=False, node_size=50, width=0.25, font_size=3, node_color=colors[1])

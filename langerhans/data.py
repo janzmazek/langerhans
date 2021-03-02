@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import colorConverter
 import matplotlib.transforms as transforms
 import matplotlib.patches as patches
-from matplotlib.gridspec import GridSpec
 
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
@@ -118,8 +117,10 @@ class Data(object):
     def get_activity(self): return self.__activity
     def get_good_cells(self): return self.__good_cells
 
+# ----------------------------- PLOTTING METHODS ------------------------------
+
     def plot(self, ax, cell,
-             plots=("mean", "raw", "slow", "fast"), protocol=True
+             plots=("mean", "raw", "slow", "fast"), protocol=True, noise=False
              ):
         time = self.__time
         sampling = self.__settings["Sampling [Hz]"]
@@ -209,21 +210,44 @@ class Data(object):
                             ha='center', va='center', xycoords=ax.transData,
                             annotation_clip=False
                             )
+        if noise:
+            if self.__distributions is False:
+                raise ValueError("No distributions data.")
+            noise_params = self.__distributions[cell]["noise_params"]
+            ax.fill_between(self.__time, -3*noise_params[2], 3*noise_params[2],
+                            color="C3", alpha=0.25, label=r"$3\cdot$STD"
+                            )
+
+    def plot_distributions(self, ax1, ax2, i):
+        if self.__distributions is False:
+            raise ValueError("No distribution data.")
+
+        noise_params = self.__distributions[i]["noise_params"]
+        spikes_params = self.__distributions[i]["spikes_params"]
+        noise_h, noise_bins = self.__distributions[i]["noise_hist"]
+        spikes_h, spikes_bins = self.__distributions[i]["spikes_hist"]
+
+        delta_noise = noise_bins[1] - noise_bins[0]
+        ax1.bar(noise_bins[:-1], noise_h, delta_noise, color="grey")
+        ax1.axvline(noise_params[1], c="k", label="Mean")
+        ax1.axvspan(noise_params[1]-noise_params[2],
+                    noise_params[1]+noise_params[2],
+                    alpha=0.5, color=EXCLUDE_COLOR,
+                    label="STD: {:.2f}".format(noise_params[2])
+                    )
+        ax1.legend()
+
+        delta_spikes = spikes_bins[1]-spikes_bins[0]
+        ax2.bar(spikes_bins[:-1], spikes_h, delta_spikes,
+                color="grey", label="Skew: {:.2f}".format(spikes_params[0])
+                )
+        ax2.axvline(spikes_params[1], c="k", label="Mean")
+        ax2.axvline(spikes_params[2], c="k", ls="--",
+                    label="STD: {:.2f}".format(spikes_params[2])
+                    )
+        ax2.legend()
 
 # ----------------------------- ANALYSIS METHODS ------------------------------
-
-    def plot_raw(self, i):
-        if self.__signal is False:
-            raise ValueError("No imported data!")
-        if i not in range(self.__cells):
-            raise ValueError("Cell index not in range.")
-
-        fig, (ax1, ax2) = plt.subplots(2, sharex=True)
-        self.plot(ax1, i, plots=("mean"))
-        self.plot(ax2, i, plots=("raw"), protocol=False)
-
-        return fig
-
 # ---------- Filter + smooth ---------- #
 
     def filter(self):
@@ -234,13 +258,14 @@ class Data(object):
         self.__filtered_slow = np.zeros((self.__cells, self.__points))
         self.__filtered_fast = np.zeros((self.__cells, self.__points))
 
-        for i in range(self.__cells):
-            self.__filtered_slow[i] = self.__bandpass(self.__signal[i],
-                                                      (*slow)
-                                                      )
-            self.__filtered_fast[i] = self.__bandpass(self.__signal[i],
-                                                      (*fast)
-                                                      )
+        for cell in range(self.__cells):
+            self.__filtered_slow[cell] = self.__bandpass(self.__signal[cell],
+                                                         (*slow)
+                                                         )
+            self.__filtered_fast[cell] = self.__bandpass(self.__signal[cell],
+                                                         (*fast)
+                                                         )
+            yield (cell+1)/self.__cells
 
     def __bandpass(self, data, lowcut, highcut, order=5):
         nyq = 0.5*self.__settings["Sampling [Hz]"]
@@ -251,23 +276,6 @@ class Data(object):
             )
         y = sosfiltfilt(sos, data)
         return y
-
-    def plot_filtered(self, i):
-        if self.__filtered_slow is False or self.__filtered_fast is False:
-            raise ValueError("No filtered data!")
-        if i not in range(self.__cells):
-            raise ValueError("Cell index not in range.")
-
-        fig, (ax1, ax2) = plt.subplots(2)
-        fig.suptitle("Filtered data")
-
-        self.plot(ax1, i, plots=("raw, slow"))
-        ax1.set_xlabel(None)
-
-        self.plot(ax2, i, plots=("raw, fast"), protocol=False)
-        ax2.set_xlim(*self.__settings["Filter"]["Plot [s]"])
-
-        return fig
 
 # ---------- Distributions ---------- #
 
@@ -295,52 +303,10 @@ class Data(object):
             self.__distributions[cell]["spikes_hist"] = np.histogram(
                 spikes, 100
                 )
-
-    def plot_distributions(self, i):
-        if self.__distributions is False:
-            raise ValueError("No distribution data.")
-
-        noise_params = self.__distributions[i]["noise_params"]
-        spikes_params = self.__distributions[i]["spikes_params"]
-        noise_h, noise_bins = self.__distributions[i]["noise_hist"]
-        spikes_h, spikes_bins = self.__distributions[i]["spikes_hist"]
-
-        fig = plt.figure(constrained_layout=True)
-        gs = GridSpec(2, 2, figure=fig)
-        ax11 = fig.add_subplot(gs[0, 0])
-        ax11.set_title("Distribution of pre-stimulatory signal")
-        ax12 = fig.add_subplot(gs[0, 1])
-        ax12.set_title("Distribution of post-stimulatoet")
-        ax2 = fig.add_subplot(gs[1, :])
-
-        delta_noise = noise_bins[1] - noise_bins[0]
-        ax11.bar(noise_bins[:-1], noise_h, delta_noise, color="grey")
-        ax11.axvline(noise_params[1], c="k", label="Mean")
-        ax11.axvspan(noise_params[1]-noise_params[2],
-                     noise_params[1]+noise_params[2],
-                     alpha=0.5, color=EXCLUDE_COLOR,
-                     label="STD: {:.2f}".format(noise_params[2])
-                     )
-        ax11.legend()
-
-        delta_spikes = spikes_bins[1]-spikes_bins[0]
-        ax12.bar(spikes_bins[:-1], spikes_h, delta_spikes,
-                 color="grey", label="Skew: {:.2f}".format(spikes_params[0])
-                 )
-        ax12.axvline(spikes_params[1], c="k", label="Mean")
-        ax12.axvline(spikes_params[2], c="k", ls="--",
-                label="STD: {:.2f}".format(spikes_params[2])
-                )
-        ax12.legend()
-
-        self.plot(ax2, i, plots=("raw, fast"), protocol=True)
-        ax2.fill_between(self.__time, -3*noise_params[2], 3*noise_params[2],
-                         color="C3", alpha=0.25, label=r"$3\cdot$STD"
-                         )
-        ax2.legend()
-        return fig
+            yield (cell+1)/self.__cells
 
 # ---------- Exclude ---------- #
+
     def autoexclude(self):
         if self.__distributions is False:
             raise ValueError("No distributions.")
@@ -353,6 +319,7 @@ class Data(object):
             spikes_std = self.__distributions[cell]["spikes_params"][2]
             if skew < score_threshold and spikes_std < STD_RATIO*noise_std:
                 self.__good_cells[cell] = False
+            yield (cell+1)/self.__cells
         print("{} of {} good cells ({:0.0f}%)".format(
             np.sum(self.__good_cells), self.__cells,
             np.sum(self.__good_cells)/self.__cells*100)
@@ -402,6 +369,7 @@ class Data(object):
                 )
             if np.sum(self.__binarized_fast[cell]) < spikes_th*self.__points:
                 self.__good_cells[cell] = False
+            yield (cell+1)/self.__cells
 
     def binarize_slow(self):
         if self.__filtered_slow is False:
@@ -428,6 +396,7 @@ class Data(object):
                         np.linspace(7, 13, e2-e1, endpoint=False)
                         )
             self.__binarized_slow[cell, extremes[-1]:] = 0
+            yield (cell+1)/self.__cells
         self.__binarized_slow = self.__binarized_slow.astype(int)
 
     def autolimit(self):
@@ -458,19 +427,8 @@ class Data(object):
 
             if self.__activity[cell][0] < stimulation/sampling:
                 self.__good_cells[cell] = False
+            yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
-
-    def plot_binarized(self, i):
-        if self.__binarized_slow is False or self.__binarized_fast is False:
-            raise ValueError("No binarized data!")
-
-        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-        fig.suptitle("Binarized data")
-
-        self.plot(ax1, i, plots=("slow", "bin_slow"))
-        self.plot(ax2, i, plots=("fast", "bin_fast"), protocol=False)
-
-        return fig
 
     def plot_events(self):
         if self.__binarized_slow is False or self.__binarized_fast is False:
