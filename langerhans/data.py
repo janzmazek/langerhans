@@ -161,6 +161,14 @@ class Data(object):
             noise = signal[:int(stimulation)]
             spikes = signal[int(stimulation):]
 
+            # Remove outliers
+            q1 = np.quantile(noise, 0.25)
+            q3 = np.quantile(noise, 0.75)
+            iqr = q3 - q1
+            noise = noise[np.logical_and(noise > q1-1.5*iqr,
+                                         noise < q3+1.5*iqr
+                                         )]
+
             # Distribution parameters of noise
             noise_params = (skew(noise), np.mean(noise), np.std(noise))
             spikes_params = (skew(spikes), np.mean(spikes), np.std(spikes))
@@ -314,51 +322,88 @@ class Data(object):
 
 # ----------------------------- PLOTTING METHODS ------------------------------
 
-    def plot(self, ax, cell,
-             plots=("mean", "raw", "slow", "fast"), protocol=True, noise=False
+    def plot(self, ax, cell, plots=("raw",),
+             protocol=True, stimulation=True, noise=False
              ):
-        time = self.__time
-        sampling = self.__settings["Sampling [Hz]"]
-        glucose = self.__settings["Glucose [mM]"]
-        TA, TAE = self.__settings["Stimulation [frame]"]
-        TA, TAE = TA/sampling, TAE/sampling
-
         if "mean" in plots:
             signal = self.__mean_islet
             signal = signal/np.max(signal)
-            ax.plot(time, signal, "k", alpha=0.25, lw=0.1)
+            ax.plot(self.__time, signal, "k", alpha=0.25, lw=0.1)
         if "raw" in plots:
             signal = self.__signal[cell]
             signal = signal - np.mean(signal)
             signal = signal/np.max(signal)
-            ax.plot(time, signal, "k", alpha=0.5, lw=0.1)
+            ax.plot(self.__time, signal, "k", alpha=0.5, lw=0.1)
         if "slow" in plots:
             filtered_slow = self.__filtered_slow[cell]
             filtered_slow = filtered_slow/np.max(filtered_slow)
-            ax.plot(time, filtered_slow, color="C0", lw=2)
+            ax.plot(self.__time, filtered_slow, color="C0", lw=2)
         if "fast" in plots:
             filtered_fast = self.__filtered_fast[cell]
             filtered_fast = filtered_fast/np.max(filtered_fast)
-            ax.plot(time, filtered_fast, color="C3", lw=0.2)
+            ax.plot(self.__time, filtered_fast, color="C3", lw=0.2)
         if "bin_slow" in plots:
             binarized_slow = self.__binarized_slow[cell]
             ax2 = ax.twinx()
-            ax2.plot(time, binarized_slow, color="k", lw=1)
+            ax2.plot(self.__time, binarized_slow, color="k", lw=1)
             ax2.set_ylabel("Phase")
         if "bin_fast" in plots:
-            # threshold = self.__distributions[cell]["noise_params"][2]
             filtered_fast = self.__filtered_fast[cell]
             binarized_fast = self.__binarized_fast[cell]/np.max(filtered_fast)
-            binarized_fast *= 0.5  # *=threshold
-            ax.plot(time, binarized_fast, color="k", lw=1)
+            binarized_fast *= 3*self.__distributions[cell]["noise_params"][2]
+            ax.plot(self.__time, binarized_fast, color="k", lw=1)
             ax2 = ax.twinx()
             ax2.set_ylabel("Action potentials")
+
+        if protocol:
+            self.__plot_protocol(ax)
+
+        if stimulation:
+            self.__plot_stimulation(ax, cell)
+
+        if noise:
+            self.__plot_noise(ax, cell)
 
         ax.set_xlim(0, self.__time[-1])
         ax.set_ylim(None, 1.1)
         ax.set_xlabel("Time [s]")
         ax.set_ylabel("Amplitude")
 
+    def __plot_protocol(self, ax):
+        sampling = self.__settings["Sampling [Hz]"]
+        glucose = self.__settings["Glucose [mM]"]
+        TA, TAE = self.__settings["Stimulation [frame]"]
+        TA, TAE = TA/sampling, TAE/sampling
+        if TA == 0 or TAE == 0:
+            return
+        color = "C0" if glucose == 8 else "C3"
+
+        rectangles = {
+            '': patches.Rectangle(
+                    (0, 1.1), TA, 0.15, color='grey', alpha=0.5,
+                    transform=ax.transData, clip_on=False
+                    ),
+            '{} mM'.format(glucose): patches.Rectangle(
+                                    (TA, 1.1), TAE-TA, 0.3,
+                                    color=color, alpha=0.8,
+                                    transform=ax.transData, clip_on=False
+                                    ),
+            '6 mM': patches.Rectangle((TAE, 1.1), self.__time[-1]-TAE,
+                                      0.15, color='grey', alpha=0.5,
+                                      transform=ax.transData, clip_on=False
+                                      )
+            }
+        for r in rectangles:
+            ax.add_artist(rectangles[r])
+            rx, ry = rectangles[r].get_xy()
+            cx = rx + rectangles[r].get_width()/2.0
+            cy = ry + rectangles[r].get_height()/2.0
+            ax.annotate(r, (cx, cy), color='k', fontsize=12,
+                        ha='center', va='center', xycoords=ax.transData,
+                        annotation_clip=False
+                        )
+
+    def __plot_stimulation(self, ax, cell):
         frame_start = self.__settings["Stimulation [frame]"][0]
         frame_end = self.__settings["Stimulation [frame]"][1]
         sampling = self.__settings["Sampling [Hz]"]
@@ -375,43 +420,11 @@ class Data(object):
         else:
             ax.axvspan(0, self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
 
-        if protocol and TA != 0 and TAE != 0:
-            color = "C0" if glucose == 8 else "C3"
-            # tform = transforms.blended_transform_factory(
-            # ax.transData, ax.transAxes
-            # )
-
-            rectangles = {
-                '': patches.Rectangle((0, 1.1), TA, 0.15,
-                                      color='grey', alpha=0.5,
-                                      transform=ax.transData, clip_on=False
-                                      ),
-                '{} mM'.format(glucose): patches.Rectangle(
-                                      (TA, 1.1), TAE-TA, 0.3,
-                                      color=color, alpha=0.8,
-                                      transform=ax.transData, clip_on=False
-                                      ),
-                '6 mM': patches.Rectangle((TAE, 1.1), time[-1]-TAE, 0.15,
-                                          color='grey', alpha=0.5,
-                                          transform=ax.transData, clip_on=False
-                                          )
-                }
-            for r in rectangles:
-                ax.add_artist(rectangles[r])
-                rx, ry = rectangles[r].get_xy()
-                cx = rx + rectangles[r].get_width()/2.0
-                cy = ry + rectangles[r].get_height()/2.0
-                ax.annotate(r, (cx, cy), color='k', fontsize=12,
-                            ha='center', va='center', xycoords=ax.transData,
-                            annotation_clip=False
-                            )
-        if noise:
-            if self.__distributions is False:
-                raise ValueError("No distributions data.")
-            noise_params = self.__distributions[cell]["noise_params"]
-            ax.fill_between(self.__time, -3*noise_params[2], 3*noise_params[2],
-                            color="C3", alpha=0.25, label=r"$3\cdot$STD"
-                            )
+    def __plot_noise(self, ax, cell):
+        noise = 3*self.__distributions[cell]["noise_params"][2]
+        ax.fill_between(self.__time, -noise, noise, color="C3", alpha=0.25,
+                        label=r"$3\cdot$STD"
+                        )
 
     def plot_distributions(self, ax1, ax2, i):
         if self.__distributions is False:
