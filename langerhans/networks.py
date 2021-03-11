@@ -4,10 +4,11 @@ from community import community_louvain
 import matplotlib.pyplot as plt
 from scipy.optimize import bisect
 
+
 class Networks(object):
     """docstring for Networks."""
 
-# ------------------------------- INITIALIZER -------------------------------- #
+# ------------------------------- INITIALIZER ------------------------------- #
     def __init__(self, cells, filtered_slow, filtered_fast, ND_avg=8):
         self.__ND_avg = ND_avg
         self.__cells = cells
@@ -23,7 +24,7 @@ class Networks(object):
         self.__G_slow = False
         self.__G_fast = False
 
-# --------------------------------- GETTERS ---------------------------------- #
+# --------------------------------- GETTERS --------------------------------- #
 
     def get_G_slow(self): return self.__G_slow
     def get_G_fast(self): return self.__G_fast
@@ -32,38 +33,48 @@ class Networks(object):
     def get_A_slow(self): return self.__A_slow
     def get_A_fast(self): return self.__A_fast
 
-# ----------------------------- NETWORK METHODS ------------------------------ #
+# ----------------------------- NETWORK METHODS ----------------------------- #
     def build_networks(self):
         # Compute correlation matrices
         self.__construct_correlation_matrix()
         # Calculate threshold and construct network
-        slow_threshold, r = bisect(lambda x: self.__graph_from_threshold(self.__R_slow, x)["ND"]-self.__ND_avg, 0, 1, full_output=True)
+        slow_threshold, _ = bisect(
+            lambda x: self.__graph_from_threshold(
+                self.__R_slow, x)["ND"]-self.__ND_avg, 0, 1, full_output=True
+                )
         # Calculate threshold and construct network
-        fast_threshold, r = bisect(lambda x: self.__graph_from_threshold(self.__R_fast, x)["ND"]-self.__ND_avg, 0, 1, full_output=True)
+        fast_threshold, _ = bisect(
+            lambda x: self.__graph_from_threshold(
+                self.__R_fast, x)["ND"]-self.__ND_avg, 0, 1, full_output=True
+                )
 
-        # self.__G_slow = self.__graph_from_threshold(self.__R_slow, slow_threshold)["G"]
-        self.__G_slow = self.__graph_from_threshold(self.__R_slow, slow_threshold)["G"]
-        self.__G_fast = self.__graph_from_threshold(self.__R_fast, fast_threshold)["G"]
+        self.__G_slow = self.__graph_from_threshold(
+            self.__R_slow, slow_threshold)["G"]
+        self.__G_fast = self.__graph_from_threshold(
+            self.__R_fast, fast_threshold)["G"]
 
         self.__A_slow = nx.to_numpy_matrix(self.__G_slow)
         self.__A_fast = nx.to_numpy_matrix(self.__G_fast)
 
     def __construct_correlation_matrix(self):
-        self.__R_slow, self.__R_fast = np.eye(self.__cells), np.eye(self.__cells)
+        self.__R_slow = np.eye(self.__cells)
+        self.__R_fast = np.eye(self.__cells)
         for i in range(self.__cells):
             for j in range(i):
-                corr_slow = np.corrcoef(self.__filtered_slow[i], self.__filtered_slow[j])[0,1]
-                self.__R_slow[i,j], self.__R_slow[j,i] = corr_slow, corr_slow
-                corr_fast = np.corrcoef(self.__filtered_fast[i], self.__filtered_fast[j])[0,1]
-                self.__R_fast[i,j], self.__R_fast[j,i] = corr_fast, corr_fast
+                corr_slow = np.corrcoef(
+                    self.__filtered_slow[i], self.__filtered_slow[j])[0, 1]
+                self.__R_slow[i, j], self.__R_slow[j, i] = corr_slow, corr_slow
+                corr_fast = np.corrcoef(
+                    self.__filtered_fast[i], self.__filtered_fast[j])[0, 1]
+                self.__R_fast[i, j], self.__R_fast[j, i] = corr_fast, corr_fast
 
     def __graph_from_threshold(self, R, R_threshold):
         G = nx.Graph()
         for i in range(self.__cells):
             G.add_node(i)
             for j in range(i):
-                if R[i,j] >= R_threshold:
-                    G.add_edge(i,j)
+                if R[i, j] >= R_threshold:
+                    G.add_edge(i, j)
         ND = np.mean([G.degree(i) for i in G])
         return {"G": G, "ND": ND}
 
@@ -93,8 +104,10 @@ class Networks(object):
         return (GE_slow, GE_fast)
 
     def max_connected_component(self):
-        MS_slow = len(max(nx.connected_components(self.__G_slow), key=len))/self.__cells
-        MS_fast = len(max(nx.connected_components(self.__G_fast), key=len))/self.__cells
+        MS_slow = len(max(nx.connected_components(self.__G_slow), key=len))
+        MS_slow /= self.__cells
+        MS_fast = len(max(nx.connected_components(self.__G_fast), key=len))
+        MS_fast /= self.__cells
         return (MS_slow, MS_fast)
 
     def average_correlation(self):
@@ -105,5 +118,9 @@ class Networks(object):
         return (R_slow_upper.mean(), R_fast_upper.mean())
 
     def draw_networks(self, positions, ax1, ax2, colors):
-        nx.draw(self.__G_slow, pos=positions, ax=ax1, with_labels=False, node_size=50, width=0.25, font_size=3, node_color=colors[0])
-        nx.draw(self.__G_fast, pos=positions, ax=ax2, with_labels=False, node_size=50, width=0.25, font_size=3, node_color=colors[1])
+        nx.draw(self.__G_slow, pos=positions, ax=ax1, with_labels=False,
+                node_size=50, width=0.25, font_size=3, node_color=colors[0]
+                )
+        nx.draw(self.__G_fast, pos=positions, ax=ax2, with_labels=False,
+                node_size=50, width=0.25, font_size=3, node_color=colors[1]
+                )
