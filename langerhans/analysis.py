@@ -1,14 +1,35 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
-from .networks import Networks
+from .network import Network
+
+PAR_NAMES = {
+    "AD": "Activity Duration (s)",
+    "AT": "Relative Active Time (%)",
+    "OD": "Duration of Oscillations (s)",
+    "F": "Frequency (1/s)",
+    "ISI": "Interspike Interval (s)",
+    "ISIV": "Interspike Variation (s)",
+    "TP": "Time to Plateau (s)",
+    "TS": "Time to Spike (s)",
+    "AMPs": "Amplitude Slow",
+    "ND": "Node Degree",
+    "C": "Clustering Coefficient",
+    "NND": "Nearest Neighbour Degree",
+    "R": "Average Correlation",
+    "GE": "Global Efficiency",
+    "MCC": "Largest Connected Component",
+}
 
 
 class Analysis(object):
     """docstring for Analysis."""
 
 # ------------------------------- INITIALIZER --------------------------------
-    def __init__(self):
+    def __init__(self, id=None):
+        self.__id = id
+
         self.__settings = None
         self.__points = None
         self.__cells = None
@@ -18,9 +39,8 @@ class Analysis(object):
         self.__binarized_slow = None
         self.__binarized_fast = None
         self.__activity = None
-        self.__act_sig = None
 
-        self.__networks = False
+        self.__act_sig = False
 
     def import_data(self, data, positions):
         assert data.is_analyzed()
@@ -42,14 +62,15 @@ class Analysis(object):
 
         self.__activity = np.array(data.get_activity())[good_cells]
 
-    def build_networks(self):
+    def build_networks(self, threshold=8):
         print("Building networks...")
         # Construct networks and build networks from data
-        self.__networks = Networks(self.__cells,
-                                   self.__filtered_slow,
-                                   self.__filtered_fast
-                                   )
-        self.__networks.build_networks()
+        self.__network_slow = Network(
+            self.__cells, self.__filtered_slow, threshold
+            )
+        self.__network_fast = Network(
+            self.__cells, self.__filtered_fast, threshold
+            )
 
 # ---------------------------- ANALYSIS FUNCTIONS ----------------------------
     def __search_sequence(self, arr, seq):
@@ -67,7 +88,7 @@ class Analysis(object):
 
         # Get the range of those indices as final output
         if M.any() > 0:
-            return np.where(M is True)[0]
+            return np.where(M)[0]
         else:
             return np.array([], dtype="int")  # No match found
 
@@ -88,88 +109,86 @@ class Analysis(object):
     def get_filtered_slow(self): return self.__filtered_slow
     def get_filtered_fast(self): return self.__filtered_fast
     def get_act_sig(self): return self.__act_sig
-    def get_networks(self): return self.__networks
 
-    def get_parameters(self):
-        par_cell = [dict() for c in range(self.__cells)]
-        par_network = False
+    def get_dynamic_parameters(self):
+        par = [dict() for c in range(self.__cells)]
         for cell in range(self.__cells):
-            par_cell[cell]["AD"] = self.activity(cell)[0]
-            par_cell[cell]["AT"] = self.activity(cell)[1]
-            par_cell[cell]["OD"] = self.activity(cell)[2]
-            par_cell[cell]["Fs"] = self.frequency(cell)[0]
-            par_cell[cell]["Ff"] = self.frequency(cell)[1]
-            par_cell[cell]["ISI"] = self.interspike(cell)[0]
-            par_cell[cell]["ISIV"] = self.interspike(cell)[1]
-            par_cell[cell]["TP"] = self.time(cell)["plateau_start"]
-            par_cell[cell]["TS"] = self.time(cell)["spike_start"]
-            par_cell[cell]["TI"] = self.time(cell)["plateau_end"]
-            par_cell[cell]["AMP"] = self.amplitudes()
+            par[cell]["AD"] = self.activity(cell)[0]
+            par[cell]["AT"] = self.activity(cell)[1]
+            par[cell]["OD"] = self.activity(cell)[2]
+            par[cell]["Fs"] = self.frequency(cell)[0]
+            par[cell]["Ff"] = self.frequency(cell)[1]
+            par[cell]["ISI"] = self.interspike(cell)[0]
+            par[cell]["ISIV"] = self.interspike(cell)[1]
+            par[cell]["TP"] = self.time(cell)["plateau_start"]
+            par[cell]["TS"] = self.time(cell)["spike_start"]
+            # par[cell]["TI"] = self.time(cell)["plateau_end"]
+            # par[cell]["AMPs"] = self.amplitudes()
 
-        if self.__networks is not False:
-            par_network = dict()
-            par_network["Rs"] = self.average_correlation()[0]
-            par_network["Rf"] = self.average_correlation()[1]
-            par_network["Ds"] = self.connection_distances()[0]
-            par_network["Df"] = self.connection_distances()[1]
-            par_network["Qs"] = self.modularity()[0]
-            par_network["Qf"] = self.modularity()[1]
-            par_network["GEs"] = self.global_efficiency()[0]
-            par_network["GEf"] = self.global_efficiency()[1]
-            par_network["MCCs"] = self.max_connected_component()[0]
-            par_network["MCCf"] = self.max_connected_component()[1]
+        return par
 
-            for cell in range(self.__cells):
-                par_cell[cell]["NDs"] = self.node_degree(cell)[0]
-                par_cell[cell]["NDf"] = self.node_degree(cell)[1]
-                par_cell[cell]["Cs"] = self.clustering(cell)[0]
-                par_cell[cell]["Cf"] = self.clustering(cell)[1]
-                par_cell[cell]["NNDs"] = self.nearest_neighbour_degree(cell)[0]
-                par_cell[cell]["NNDf"] = self.nearest_neighbour_degree(cell)[1]
+    def get_glob_network_parameters(self):
+        if self.__network_slow is False:
+            raise ValueError("Network is not built.")
+
+        par = dict()
+        par["Rs"] = self.__network_slow.average_correlation()
+        par["Rf"] = self.__network_fast.average_correlation()
+        par["Ds"] = self.__network_slow.connection_distances()
+        par["Df"] = self.__network_fast.connection_distances()
+        par["Qs"] = self.__network_slow.modularity()
+        par["Qf"] = self.__network_fast.modularity()
+        par["GEs"] = self.__network_slow.global_efficiency()
+        par["GEf"] = self.__network_fast.global_efficiency()
+        par["MCCs"] = self.__network_slow.max_connected_component()
+        par["MCCf"] = self.__network_fast.max_connected_component()
+
+        return par
+
+    def get_ind_network_parameters(self):
+        if self.__network_slow is False:
+            raise ValueError("Network is not build.")
+
+        par = [dict() for c in range(self.__cells)]
+        for cell in range(self.__cells):
+            par[cell]["NDs"] = self.__network_slow.degree(cell)
+            par[cell]["NDf"] = self.__network_fast.degree(cell)
+            par[cell]["Cs"] = self.__network_slow.clustering(cell)
+            par[cell]["Cf"] = self.__network_fast.clustering(cell)
+            par[cell]["NNDs"] = self.__network_slow.average_neighbour_degree(
+                cell
+                )
+            par[cell]["NNDf"] = self.__network_fast.average_neighbour_degree(
+                cell
+                )
+
+        return par
+
+    def to_pandas(self):
+        data = []
+        dyn_par = self.get_dynamic_parameters()
+        net_par = self.get_ind_network_parameters()
+        ind = [{**dyn_par[c], **net_par[c]} for c in range(self.__cells)]
+        for c in range(self.__cells):
+            for p in ind[c]:
+                if p[-1] in ("s", "f"):
+                    mode = "Slow" if p[-1] == "s" else "Fast"
+                    p_stripped = p[:-1]
+                else:
+                    mode = "Undefined"
+                    p_stripped = p
+                data.append({"Islet ID": self.__id,
+                             "Cell ID": c,
+                             "Par ID": p,
+                             "Glucose": self.__settings["Glucose [mM]"],
+                             "Parameter": PAR_NAMES[p_stripped],
+                             "Mode": mode,
+                             "Value": ind[c][p]
+                             })
+        df = pd.DataFrame(data=data)
+        return df
 
 # ----------------------- INDIVIDUAL PARAMETER METHODS -----------------------
-
-    def average_correlation(self):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.average_correlation()
-
-    def connection_distances(self):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        A_dst = self.__distances_matrix()
-        A_slow = self.__networks.get_A_slow()
-        A_fast = self.__networks.get_A_fast()
-
-        A_dst_slow = np.multiply(A_dst, A_slow)
-        A_dst_fast = np.multiply(A_dst, A_fast)
-
-        slow_distances, fast_distances = [], []
-        for c1 in range(self.__cells):
-            for c2 in range(c1):
-                ds = A_dst_slow[c1, c2]
-                df = A_dst_fast[c1, c2]
-                if ds > 0:
-                    slow_distances.append(ds)
-                if df > 0:
-                    fast_distances.append(df)
-
-        return (np.array(slow_distances), np.array(fast_distances))
-
-    def modularity(self):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.modularity()
-
-    def global_efficiency(self):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.global_efficiency()
-
-    def max_connected_component(self):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.max_connected_component()
 
     def amplitudes(self):
         amplitudes = []
@@ -268,21 +287,6 @@ class Analysis(object):
 
         return time
 
-    def node_degree(self, cell):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.node_degree(cell)
-
-    def clustering(self, cell):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.clustering(cell)
-
-    def nearest_neighbour_degree(self, cell):
-        if self.__networks is False:
-            raise ValueError("Network is not built.")
-        return self.__networks.nearest_neighbour_degree(cell)
-
 # ----------------------------- ANALYSIS METHODS ------------------------------
 # ----------------------------- Spikes vs phases ------------------------------
 
@@ -341,12 +345,13 @@ class Analysis(object):
         return (distances, correlations_slow, correlations_fast)
 
 # -------------------------- WAVE DETECTION METHODS ---------------------------
-    def wave_detection(self, time_th=0.5):
-        print("Detecting waves")
-        event_num = []
+    def detect_waves(self, time_th=0.5):
+        if self.__act_sig is not False:
+            return
+        print("Detecting waves...")
 
         bin_sig = self.__binarized_fast
-        act_sig = np.zeros_like(bin_sig, int)
+        self.__act_sig = np.zeros_like(bin_sig, int)
         frame_th = int(time_th*self.__sampling)
         R = self.__distances_matrix()
         R_th = np.average(R) - np.std(R)
@@ -355,95 +360,79 @@ class Analysis(object):
         for i in range(self.__cells):
             neighbours.append(np.where((R[i, :] < R_th) & (R[i, :] != 0))[0])
 
-        nonzero = {}
-        # Poisce vse frejme, kjer je kakšna celica aktivna
-        nonzero_frames = np.where(bin_sig.T == 1)[0]
-        # zanka po frejmih z aktivnostjo
-        for frame in nonzero_frames:
-            # v frejmu z aktivnostjo poisce vse celice, ki so dejansko aktivne
-            nonzero[frame] = list(np.where(bin_sig.T[frame, :] == 1)[0])
+        # Find frames with at least 1 active cell
+        active_frames = np.where(bin_sig.T == 1)[0]
+        active_cells = {}
+        for frame in active_frames:
+            # Find indices of active cells inside active frames
+            active_cells[frame] = list(np.where(bin_sig.T[frame, :] == 1)[0])
 
-        counter = 0
-        # zanka po frame-ih z aktivnostjo
-        for frame in nonzero:
-            # Obdela prvi aktivni frame v binsig matriki
-            if counter == 0:
-                k = 1
-                # Zanka po aktivnih celicah v frejmu
-                for cell in nonzero[frame]:
-                    act_sig[cell, frame] = k
-                    k += 1
+        # Define new iterator from dictionary REQUIRES: python 3.6
+        iter_active_cells = iter(active_cells)
+        # First active frame in new iterator
+        frame = next(iter_active_cells)
+        for k, cell in enumerate(active_cells[frame]):
+            self.__act_sig[cell, frame] = k
 
-                for nn in nonzero[frame]:
-                    current = set(nonzero[frame])
-                    neighbours_nn = set(neighbours[nn])
-                    for nnn in list(neighbours_nn.intersection(current)):
-                        act_sig[nn, frame] = min(act_sig[nn, frame],
-                                                 act_sig[nnn, frame]
-                                                 )
-                        act_sig[nnn, frame] = act_sig[nn, frame]
+        for nn in active_cells[frame]:
+            current = set(active_cells[frame])
+            neighbours_nn = set(neighbours[nn])
+            for nnn in list(neighbours_nn.intersection(current)):
+                self.__act_sig[nn, frame] = min(self.__act_sig[nn, frame],
+                                                self.__act_sig[nnn, frame]
+                                                )
+                self.__act_sig[nnn, frame] = self.__act_sig[nn, frame]
 
-                un_num = np.unique(act_sig[:, frame])
-                event_num = list(set(event_num).union(set(un_num)))
+        un_num = np.unique(self.__act_sig[:, frame])
+        event_num = set(un_num)
+        max_event_num = max(event_num)
 
-                max_event_num = max(event_num)
-                counter += 1
+        # The rest of active frames in new iterator
+        for frame in iter_active_cells:
+            for k, cell in enumerate(active_cells[frame], max_event_num):
+                # Če je celica v tem frameu aktivna, v prejsnjem pa ne, ji
+                # dodeli novo številko dogodka
+                if bin_sig[cell, frame-1] == 0:
+                    self.__act_sig[cell, frame] = k
+                # Če je celica bila že v prejsnjem frejmu aktivna, ji
+                # prepiše indeks dogodka
+                else:
+                    self.__act_sig[cell, frame] = self.__act_sig[cell, frame-1]
 
-            if counter != 0:
-                k = max_event_num + 1
-                # Zanka po aktivnih celicah
-                for cell in nonzero[frame]:
-                    # Če je celica v tem frameu aktivna, v prejsnjem pa ne, ji
-                    # dodeli novo številko dogodka
-                    if bin_sig[cell, frame-1] == 0:
-                        act_sig[cell, frame] = k
-                        k += 1
-                    # Če je celica bila že v prejsnjem frejmu aktivna, ji
-                    # prepiše indeks dogodka
-                    else:
-                        act_sig[cell, frame] = act_sig[cell, frame-1]
+            for nn in active_cells[frame]:
+                current = set(active_cells[frame])
+                neighbours_nn = set(neighbours[nn])
+                for nnn in list(neighbours_nn.intersection(current)):
+                    start, end = frame-frame_th, frame+1
+                    condx = (np.sum(bin_sig[nn, start:end]) <= frame_th)
+                    condy = (np.sum(bin_sig[nnn, start:end]) <= frame_th)
+                    self.__conditions(frame, nn, nnn, condx, condy)
 
-                for nn in nonzero[frame]:
-                    current = set(nonzero[frame])
-                    neighbours_nn = set(neighbours[nn])
-                    for nnn in list(neighbours_nn.intersection(current)):
-                        if act_sig[nn, frame] != 0 and \
-                                act_sig[nnn, frame] != 0 and \
-                                act_sig[nn, frame-1] != 0 and \
-                                np.sum(bin_sig[nn, frame-frame_th:frame+1]) \
-                                <= frame_th and \
-                                act_sig[nnn, frame-1] == 0 and \
-                                nn != nnn:
-                            act_sig[nnn, frame] = act_sig[nn, frame]
-                        if act_sig[nn, frame] != 0 and \
-                                act_sig[nnn, frame] != 0 and \
-                                act_sig[nn, frame-1] == 0 and \
-                                act_sig[nnn, frame-1] != 0 and \
-                                np.sum(bin_sig[nnn, frame-frame_th:frame+1]) \
-                                <= frame_th and \
-                                nn != nnn:
-                            act_sig[nn, frame] = act_sig[nnn, frame]
-                        if act_sig[nn, frame] != 0 and \
-                                act_sig[nnn, frame] != 0 and \
-                                act_sig[nn, frame-1] == 0 and \
-                                act_sig[nnn, frame-1] == 0 and \
-                                nn != nnn:
-                            act_sig[nn, frame] = min(act_sig[nn, frame],
-                                                     act_sig[nnn, frame]
-                                                     )
-                            act_sig[nnn, frame] = act_sig[nn, frame]
+            un_num = np.unique(self.__act_sig[:, frame])
+            event_num = list(set(event_num).union(set(un_num)))
+            max_event_num = max(event_num)
 
-                un_num = np.unique(act_sig[:, frame])
-                event_num = list(set(event_num).union(set(un_num)))
+    def __conditions(self, frame, nn, nnn, condx, condy):
+        cond0 = (nn != nnn)
+        cond1 = (self.__act_sig[nn, frame] != 0)
+        cond2 = (self.__act_sig[nnn, frame] != 0)
+        cond3 = (self.__act_sig[nn, frame-1] != 0)
+        cond4 = (self.__act_sig[nnn, frame-1] != 0)
 
-                max_event_num = max(event_num)
-                counter += 1
-        self.__act_sig = act_sig
+        if cond0 and cond1 and cond2 and cond3 and not cond4 and condx:
+            self.__act_sig[nnn, frame] = self.__act_sig[nn, frame]
+        if cond0 and cond1 and cond2 and not cond3 and cond4 and condy:
+            self.__act_sig[nn, frame] = self.__act_sig[nnn, frame]
+        if cond0 and cond1 and cond2 and not cond3 and not cond4:
+            self.__act_sig[nn, frame] = min(self.__act_sig[nn, frame],
+                                            self.__act_sig[nnn, frame]
+                                            )
+            self.__act_sig[nnn, frame] = self.__act_sig[nn, frame]
 
-    def wave_characterization(self, big_th=0.45, small_th=0.1, time_th=0.5):
-        if self.__act_sig is None:
-            self.wave_detection(time_th)
-        print("Characterizing waves")
+    def characterize_waves(self, small_th=0.1, big_th=0.45, time_th=0.5):
+        if self.__act_sig is False:
+            self.detect_waves(time_th)
+        print("Characterizing waves...")
         # vse stevilke dogodkov razen nicle - 0=neaktivne celice
         events = np.unique(self.__act_sig[self.__act_sig != 0])
         # print(events)
@@ -476,9 +465,8 @@ class Analysis(object):
 # ------------------------------ DRAWING METHODS ------------------------------
 
     def draw_networks(self, ax1, ax2, colors):
-        return self.__networks.draw_networks(
-            self.__positions, ax1, ax2, colors
-            )
+        self.__network_slow.draw_network(self.__positions, ax1, colors[0])
+        self.__network_fast.draw_network(self.__positions, ax2, colors[1])
 
     def plot_events(self, events, all_events):
         for e in (events, all_events):
