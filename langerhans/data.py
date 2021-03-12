@@ -54,10 +54,14 @@ class Data(object):
         self.__good_cells = False
 
 # --------------------------------- IMPORTS -----------------------------------
+    def import_data_custom(self, signal):
+        signal = np.around(signal[:, 1:].transpose(), decimals=3)
+        self.import_data(signal)
+
     def import_data(self, signal):
         if not len(signal.shape) == 2:
             raise ValueError("Signal shape not 2D.")
-        self.__signal = np.around(signal[:, 1:].transpose(), decimals=3)
+        self.__signal = signal
         self.__mean_islet = np.mean(self.__signal, 0)  # average over 0 axis
         self.__mean_islet = self.__mean_islet - np.mean(self.__mean_islet)
         sampling = self.__settings["Sampling [Hz]"]
