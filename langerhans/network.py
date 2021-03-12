@@ -5,21 +5,18 @@ from scipy.optimize import bisect
 
 
 class Network(nx.Graph):
-    def __init__(self, cells, filtered, threshold):
+    def __init__(self, filtered, threshold):
         super().__init__()
-        self.__cells = cells
+        self.__cells = len(filtered)
         self.__R = np.corrcoef(filtered)
         if threshold >= 1:
-            threshold, _ = bisect(
-                lambda x: self.average_node_degree(x)-threshold, 0, 1,
-                full_output=True
-                )
+            threshold = bisect(lambda x: self.__build(x)-threshold, 0, 1)
         else:
-            _ = self.average_node_degree(threshold)
+            self.__build(threshold)
 
     def get_R(self): return self.__R
 
-    def average_node_degree(self, R_threshold):
+    def __build(self, R_threshold):
         self.clear()
         for i in range(self.__cells):
             self.add_node(i)
@@ -38,6 +35,9 @@ class Network(nx.Graph):
     def modularity(self):
         partition = community_louvain.best_partition(self)
         return community_louvain.modularity(partition, self)
+
+    def global_efficiency(self):
+        return nx.global_efficiency(self)
 
     def max_connected_component(self):
         return len(max(nx.connected_components(self), key=len))/self.__cells

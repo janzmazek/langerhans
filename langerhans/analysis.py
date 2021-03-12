@@ -20,6 +20,7 @@ PAR_NAMES = {
     "R": "Average Correlation",
     "GE": "Global Efficiency",
     "MCC": "Largest Connected Component",
+    "D": "Average Connection Distances (μm)"
 }
 
 
@@ -39,10 +40,12 @@ class Analysis(object):
         self.__binarized_slow = None
         self.__binarized_fast = None
         self.__activity = None
+        self.__network_slow = False
+        self.__network_fast = False
 
         self.__act_sig = False
 
-    def import_data(self, data, positions):
+    def import_data(self, data, positions=False, threshold=8):
         assert data.is_analyzed()
 
         good_cells = data.get_good_cells()
@@ -50,8 +53,6 @@ class Analysis(object):
         self.__settings = data.get_settings()
         self.__sampling = self.__settings["Sampling [Hz]"]
         self.__points = data.get_points()
-        distance = self.__settings["Distance [um]"]
-        self.__positions = positions[good_cells]*distance
         self.__cells = np.sum(good_cells)
 
         self.__filtered_slow = data.get_filtered_slow()[good_cells]
@@ -62,15 +63,14 @@ class Analysis(object):
 
         self.__activity = np.array(data.get_activity())[good_cells]
 
-    def build_networks(self, threshold=8):
-        print("Building networks...")
-        # Construct networks and build networks from data
-        self.__network_slow = Network(
-            self.__cells, self.__filtered_slow, threshold
-            )
-        self.__network_fast = Network(
-            self.__cells, self.__filtered_fast, threshold
-            )
+        self.__network_slow = Network(self.__filtered_slow, threshold)
+        self.__network_fast = Network(self.__filtered_fast, threshold)
+
+        if positions is not False:
+            distance = self.__settings["Distance [um]"]
+            self.__positions = positions[good_cells]*distance
+        else:
+            self.__positions = False
 
 # ---------------------------- ANALYSIS FUNCTIONS ----------------------------
     def __search_sequence(self, arr, seq):
@@ -93,6 +93,8 @@ class Analysis(object):
             return np.array([], dtype="int")  # No match found
 
     def __distances_matrix(self):
+        if self.__positions is False:
+            raise ValueError("No positions specified.")
         A_dst = np.zeros((self.__cells, self.__cells))
         for cell1 in range(self.__cells):
             for cell2 in range(cell1):
@@ -105,9 +107,8 @@ class Analysis(object):
 
 # ------------------------------ GETTER METHODS ------------------------------
 
+    def get_networks(self): return (self.__network_slow, self.__network_fast)
     def get_positions(self): return self.__positions
-    def get_filtered_slow(self): return self.__filtered_slow
-    def get_filtered_fast(self): return self.__filtered_fast
     def get_act_sig(self): return self.__act_sig
 
     def get_dynamic_parameters(self):
@@ -128,27 +129,24 @@ class Analysis(object):
         return par
 
     def get_glob_network_parameters(self):
-        if self.__network_slow is False:
-            raise ValueError("Network is not built.")
+        A_dst = self.__distances_matrix()
 
         par = dict()
         par["Rs"] = self.__network_slow.average_correlation()
         par["Rf"] = self.__network_fast.average_correlation()
-        par["Ds"] = self.__network_slow.connection_distances()
-        par["Df"] = self.__network_fast.connection_distances()
         par["Qs"] = self.__network_slow.modularity()
         par["Qf"] = self.__network_fast.modularity()
         par["GEs"] = self.__network_slow.global_efficiency()
         par["GEf"] = self.__network_fast.global_efficiency()
         par["MCCs"] = self.__network_slow.max_connected_component()
         par["MCCf"] = self.__network_fast.max_connected_component()
+        if self.__positions is not False:
+            par["Ds"] = self.__network_slow.average_connection_distances(A_dst)
+            par["Df"] = self.__network_fast.average_connection_distances(A_dst)
 
         return par
 
     def get_ind_network_parameters(self):
-        if self.__network_slow is False:
-            raise ValueError("Network is not build.")
-
         par = [dict() for c in range(self.__cells)]
         for cell in range(self.__cells):
             par[cell]["NDs"] = self.__network_slow.degree(cell)
@@ -348,10 +346,8 @@ class Analysis(object):
     def detect_waves(self, time_th=0.5):
         if self.__act_sig is not False:
             return
-        print("Detecting waves...")
 
-        bin_sig = self.__binarized_fast
-        self.__act_sig = np.zeros_like(bin_sig, int)
+        self.__act_sig = np.zeros_like(self.__binarized_fast, int)
         frame_th = int(time_th*self.__sampling)
         R = self.__distances_matrix()
         R_th = np.average(R) - np.std(R)
@@ -361,11 +357,13 @@ class Analysis(object):
             neighbours.append(np.where((R[i, :] < R_th) & (R[i, :] != 0))[0])
 
         # Find frames with at least 1 active cell
-        active_frames = np.where(bin_sig.T == 1)[0]
+        active_frames = np.where(self.__binarized_fast.T == 1)[0]
         active_cells = {}
         for frame in active_frames:
             # Find indices of active cells inside active frames
-            active_cells[frame] = list(np.where(bin_sig.T[frame, :] == 1)[0])
+            active_cells[frame] = list(
+                np.where(self.__binarized_fast.T[frame, :] == 1)[0]
+                )
 
         # Define new iterator from dictionary REQUIRES: python 3.6
         iter_active_cells = iter(active_cells)
@@ -390,12 +388,10 @@ class Analysis(object):
         # The rest of active frames in new iterator
         for frame in iter_active_cells:
             for k, cell in enumerate(active_cells[frame], max_event_num):
-                # Če je celica v tem frameu aktivna, v prejsnjem pa ne, ji
-                # dodeli novo številko dogodka
-                if bin_sig[cell, frame-1] == 0:
+                # New event index
+                if self.__binarized_fast[cell, frame-1] == 0:
                     self.__act_sig[cell, frame] = k
-                # Če je celica bila že v prejsnjem frejmu aktivna, ji
-                # prepiše indeks dogodka
+                # Previous event index
                 else:
                     self.__act_sig[cell, frame] = self.__act_sig[cell, frame-1]
 
@@ -403,21 +399,23 @@ class Analysis(object):
                 current = set(active_cells[frame])
                 neighbours_nn = set(neighbours[nn])
                 for nnn in list(neighbours_nn.intersection(current)):
-                    start, end = frame-frame_th, frame+1
-                    condx = (np.sum(bin_sig[nn, start:end]) <= frame_th)
-                    condy = (np.sum(bin_sig[nnn, start:end]) <= frame_th)
-                    self.__conditions(frame, nn, nnn, condx, condy)
+                    self.__conditions(
+                        frame, nn, nnn, frame-frame_th, frame+1, frame_th
+                        )
 
             un_num = np.unique(self.__act_sig[:, frame])
             event_num = list(set(event_num).union(set(un_num)))
             max_event_num = max(event_num)
 
-    def __conditions(self, frame, nn, nnn, condx, condy):
+    def __conditions(self, frame, nn, nnn, start, end, frame_th):
         cond0 = (nn != nnn)
         cond1 = (self.__act_sig[nn, frame] != 0)
         cond2 = (self.__act_sig[nnn, frame] != 0)
         cond3 = (self.__act_sig[nn, frame-1] != 0)
         cond4 = (self.__act_sig[nnn, frame-1] != 0)
+
+        condx = (np.sum(self.__binarized_fast[nn, start:end]) <= frame_th)
+        condy = (np.sum(self.__binarized_fast[nnn, start:end]) <= frame_th)
 
         if cond0 and cond1 and cond2 and cond3 and not cond4 and condx:
             self.__act_sig[nnn, frame] = self.__act_sig[nn, frame]
@@ -465,6 +463,8 @@ class Analysis(object):
 # ------------------------------ DRAWING METHODS ------------------------------
 
     def draw_networks(self, ax1, ax2, colors):
+        if self.__positions is False:
+            raise ValueError("No positions specified.")
         self.__network_slow.draw_network(self.__positions, ax1, colors[0])
         self.__network_fast.draw_network(self.__positions, ax2, colors[1])
 

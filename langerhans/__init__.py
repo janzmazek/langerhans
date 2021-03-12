@@ -1,4 +1,4 @@
 from .data import Data
 from .analysis import Analysis
-from .networks import Networks
+from .network import Network
 from .global_analysis import GlobalAnalysis
