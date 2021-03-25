@@ -161,9 +161,12 @@ class Data(object):
             signal /= np.max(np.abs(signal))
 
             # Define noise from time 0 to start of stimulation
-            stimulation = int(self.__settings["Stimulation [frame]"][0])
-            noise = signal[:int(stimulation)]
-            spikes = signal[int(stimulation):]
+            start, end = self.__settings["Stimulation [frame]"]
+            noise = signal[:int(start)]
+            if end != 0:
+                spikes = signal[int(start):int(end)]
+            else:
+                spikes = signal[int(start):]
 
             # Remove outliers
             q1 = np.quantile(noise, 0.25)
@@ -197,6 +200,8 @@ class Data(object):
             skew = self.__distributions[cell]["spikes_params"][0]
             noise_std = self.__distributions[cell]["noise_params"][2]
             spikes_std = self.__distributions[cell]["spikes_params"][2]
+
+            # Excluding algorithm
             if skew < score_threshold and spikes_std < STD_RATIO*noise_std:
                 self.__good_cells[cell] = False
             yield (cell+1)/self.__cells
@@ -327,16 +332,16 @@ class Data(object):
 # ----------------------------- PLOTTING METHODS ------------------------------
 
     def plot(self, ax, cell, plots=("raw",),
-             protocol=True, stimulation=True, noise=False
+             protocol=True, stimulation=True, activity=True, noise=False
              ):
         if "mean" in plots:
             signal = self.__mean_islet
-            signal = signal/np.max(signal)
+            signal /= np.max(np.abs(signal))
             ax.plot(self.__time, signal, "k", alpha=0.25, lw=0.1)
         if "raw" in plots:
             signal = self.__signal[cell]
             signal = signal - np.mean(signal)
-            signal = signal/np.max(signal)
+            signal /= np.max(np.abs(signal))
             ax.plot(self.__time, signal, "k", alpha=0.5, lw=0.1)
         if "slow" in plots:
             filtered_slow = self.__filtered_slow[cell]
@@ -363,7 +368,10 @@ class Data(object):
             self.__plot_protocol(ax)
 
         if stimulation:
-            self.__plot_stimulation(ax, cell)
+            self.__plot_stimulation(ax)
+
+        if activity:
+            self.__plot_activity(ax, cell)
 
         if noise:
             self.__plot_noise(ax, cell)
@@ -381,20 +389,23 @@ class Data(object):
         if TA == 0 or TAE == 0:
             return
         color = "C0" if glucose == 8 else "C3"
+        trans = transforms.blended_transform_factory(ax.transData,
+                                                     ax.transAxes
+                                                     )
 
         rectangles = {
             '': patches.Rectangle(
-                    (0, 1.1), TA, 0.15, color='grey', alpha=0.5,
-                    transform=ax.transData, clip_on=False
+                    (0, 1), TA, 0.075, color='grey', alpha=0.5,
+                    transform=trans, clip_on=False
                     ),
             '{} mM'.format(glucose): patches.Rectangle(
-                                    (TA, 1.1), TAE-TA, 0.3,
+                                    (TA, 1), TAE-TA, 0.1,
                                     color=color, alpha=0.8,
-                                    transform=ax.transData, clip_on=False
+                                    transform=trans, clip_on=False
                                     ),
-            '6 mM': patches.Rectangle((TAE, 1.1), self.__time[-1]-TAE,
-                                      0.15, color='grey', alpha=0.5,
-                                      transform=ax.transData, clip_on=False
+            '6 mM': patches.Rectangle((TAE, 1), self.__time[-1]-TAE,
+                                      0.075, color='grey', alpha=0.5,
+                                      transform=trans, clip_on=False
                                       )
             }
         for r in rectangles:
@@ -403,17 +414,18 @@ class Data(object):
             cx = rx + rectangles[r].get_width()/2.0
             cy = ry + rectangles[r].get_height()/2.0
             ax.annotate(r, (cx, cy), color='k', fontsize=12,
-                        ha='center', va='center', xycoords=ax.transData,
+                        ha='center', va='center', xycoords=trans,
                         annotation_clip=False
                         )
 
-    def __plot_stimulation(self, ax, cell):
+    def __plot_stimulation(self, ax):
         frame_start = self.__settings["Stimulation [frame]"][0]
         frame_end = self.__settings["Stimulation [frame]"][1]
         sampling = self.__settings["Sampling [Hz]"]
         ax.axvline(frame_start/sampling, c="grey")
         ax.axvline(frame_end/sampling, c="grey")
 
+    def __plot_activity(self, ax, cell):
         if self.__good_cells[cell]:
             if self.__activity is not False:
                 border = self.__activity[cell]
@@ -430,34 +442,44 @@ class Data(object):
                         label=r"$3\cdot$STD"
                         )
 
-    def plot_distributions(self, ax1, ax2, i):
+    def plot_distributions(self, ax, i, interval="noise"):
         if self.__distributions is False:
             raise ValueError("No distribution data.")
 
-        noise_params = self.__distributions[i]["noise_params"]
-        spikes_params = self.__distributions[i]["spikes_params"]
-        noise_h, noise_bins = self.__distributions[i]["noise_hist"]
-        spikes_h, spikes_bins = self.__distributions[i]["spikes_hist"]
+        if interval == "noise":
+            _, mean, std = self.__distributions[i]["noise_params"]
+            skew = False
+            h, bins = self.__distributions[i]["noise_hist"]
+            color = EXCLUDE_COLOR
+            ax.invert_xaxis()
+            ax.set_ylabel("Noise amplitude")
+        elif interval == "signal":
+            skew, mean, std = self.__distributions[i]["spikes_params"]
+            h, bins = self.__distributions[i]["spikes_hist"]
+            color = "C2"
+            ax.yaxis.set_label_position("right")
+            ax.set_ylabel("Signal amplitude")
+            ax.yaxis.tick_right()
+        ax.set_xlabel("Distribution")
 
-        delta_noise = noise_bins[1] - noise_bins[0]
-        ax1.bar(noise_bins[:-1], noise_h, delta_noise, color="grey")
-        ax1.axvline(noise_params[1], c="k", label="Mean")
-        ax1.axvspan(noise_params[1]-noise_params[2],
-                    noise_params[1]+noise_params[2],
-                    alpha=0.5, color=EXCLUDE_COLOR,
-                    label="STD: {:.2f}".format(noise_params[2])
-                    )
-        ax1.legend()
-
-        delta_spikes = spikes_bins[1]-spikes_bins[0]
-        ax2.bar(spikes_bins[:-1], spikes_h, delta_spikes,
-                color="grey", label="Skew: {:.2f}".format(spikes_params[0])
-                )
-        ax2.axvline(spikes_params[1], c="k", label="Mean")
-        ax2.axvline(spikes_params[2], c="k", ls="--",
-                    label="STD: {:.2f}".format(spikes_params[2])
-                    )
-        ax2.legend()
+        delta_noise = bins[1] - bins[0]
+        label = "Skew: {:.2f}".format(skew) if skew else None
+        ax.barh(bins[:-1], h, delta_noise, color="grey", label=label)
+        ax.axhline(mean, c="k", label="Mean")
+        ax.axhspan(mean-std, mean+std, alpha=0.5,
+                   color=color, label="STD: {:.2f}".format(std)
+                   )
+        ax.legend(loc="upper center", prop={'size': 6})
+        if skew:
+            # Arrow direction
+            direc = 0.5 if skew > 0 else -0.5
+            trans = transforms.blended_transform_factory(
+                ax.transAxes, ax.transData)
+            # Skew arrow
+            ax.annotate("", xy=(0.5, 0), xytext=(0.5, direc), xycoords=trans,
+                        arrowprops=dict(arrowstyle="<-", facecolor='black'),
+                        label="Hello"
+                        )
 
     def plot_events(self, ax):
         if self.__binarized_slow is False or self.__binarized_fast is False:
