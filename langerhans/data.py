@@ -288,7 +288,7 @@ class Data(object):
         if self.__binarized_fast is False:
             raise ValueError("No binarized data.")
         print("Computing activity...")
-        self.__activity = []
+        self.__activity = [False for i in range(self.__cells)]
         for cell in range(self.__cells):
             data = self.__binarized_fast[cell]
             cumsum = np.cumsum(data)
@@ -308,7 +308,7 @@ class Data(object):
                  [0, lower_limit+1],
                  [upper_limit-1, self.__time[-1]]]
                 )
-            self.__activity.append(res.x[1:])
+            self.__activity[cell] = res.x[1:]
 
             if self.__activity[cell][0] < stimulation/sampling:
                 self.__good_cells[cell] = False
@@ -428,11 +428,12 @@ class Data(object):
     def __plot_activity(self, ax, cell):
         if self.__good_cells[cell]:
             if self.__activity is not False:
-                border = self.__activity[cell]
-                ax.axvspan(0, border[0], alpha=0.25, color="grey")
-                ax.axvspan(
-                    border[1], self.__time[-1], alpha=0.25, color="grey"
-                    )
+                if self.__activity[cell] is not False:
+                    border = self.__activity[cell]
+                    ax.axvspan(0, border[0], alpha=0.25, color="grey")
+                    ax.axvspan(
+                        border[1], self.__time[-1], alpha=0.25, color="grey"
+                        )
         else:
             ax.axvspan(0, self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
 
