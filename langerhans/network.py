@@ -59,7 +59,7 @@ class Network(nx.Graph):
                     distances.append(d)
         return distances
 
-    def draw_network(self, positions, ax, color):
-        nx.draw(self, pos=positions, ax=ax, with_labels=False, node_size=50,
-                width=0.25, font_size=3, node_color=color
+    def draw_network(self, *args, **kwargs):
+        nx.draw(self, with_labels=False, node_size=50, width=0.25, font_size=3,
+                *args, **kwargs
                 )

@@ -28,49 +28,53 @@ class Analysis(object):
     """docstring for Analysis."""
 
 # ------------------------------- INITIALIZER --------------------------------
-    def __init__(self, id=None):
-        self.__id = id
-
-        self.__settings = None
-        self.__points = None
-        self.__cells = None
-        self.__positions = None
-        self.__filtered_slow = None
-        self.__filtered_fast = None
-        self.__binarized_slow = None
-        self.__binarized_fast = None
-        self.__activity = None
+    def __init__(self):
+        self.__settings = False
+        self.__cells = False
+        self.__positions = False
+        self.__filtered_slow = False
+        self.__binarized_slow = False
+        self.__filtered_fast = False
+        self.__binarized_fast = False
+        self.__activity = False
         self.__network_slow = False
         self.__network_fast = False
 
+        self.__dataframe = False
         self.__act_sig = False
 
-    def import_data(self, data, positions=False, threshold=8):
+    def import_data(self, data, threshold=8):
         assert data.is_analyzed()
 
         good_cells = data.get_good_cells()
 
         self.__settings = data.get_settings()
+        try:
+            self.__id = self.__settings["ID"]
+        except KeyError:
+            pass
         self.__sampling = self.__settings["Sampling [Hz]"]
-        self.__points = data.get_points()
         self.__cells = np.sum(good_cells)
 
-        self.__filtered_slow = data.get_filtered_slow()[good_cells]
+        if self.__filtered_slow:
+            self.__filtered_slow = data.get_filtered_slow()[good_cells]
+            self.__binarized_slow = data.get_binarized_slow()[good_cells]
+            self.__network_slow = Network(self.__filtered_slow, threshold)
+
         self.__filtered_fast = data.get_filtered_fast()[good_cells]
-
-        self.__binarized_slow = data.get_binarized_slow()[good_cells]
         self.__binarized_fast = data.get_binarized_fast()[good_cells]
-
-        self.__activity = np.array(data.get_activity())[good_cells]
-
-        self.__network_slow = Network(self.__filtered_slow, threshold)
         self.__network_fast = Network(self.__filtered_fast, threshold)
 
-        if positions is not False:
-            distance = self.__settings["Distance [um]"]
-            self.__positions = positions[good_cells]*distance
-        else:
-            self.__positions = False
+        self.__activity = np.array(data.get_activity())[good_cells]
+        self.__good_cells = good_cells
+
+        pos = data.get_positions()
+        if pos is not False:
+            self.import_positions(pos)
+
+    def import_positions(self, positions):
+        distance = self.__settings["Distance [um]"]
+        self.__positions = positions[self.__good_cells]*distance
 
 # ---------------------------- ANALYSIS FUNCTIONS ----------------------------
     def __search_sequence(self, arr, seq):
@@ -109,6 +113,7 @@ class Analysis(object):
 
     def get_networks(self): return (self.__network_slow, self.__network_fast)
     def get_positions(self): return self.__positions
+    def get_dataframe(self): return self.__dataframe
     def get_act_sig(self): return self.__act_sig
 
     def get_dynamic_parameters(self):
@@ -117,31 +122,22 @@ class Analysis(object):
             par[cell]["AD"] = self.activity(cell)[0]
             par[cell]["AT"] = self.activity(cell)[1]
             par[cell]["OD"] = self.activity(cell)[2]
-            par[cell]["Fs"] = self.frequency(cell)[0]
-            par[cell]["Ff"] = self.frequency(cell)[1]
+            par[cell]["Ff"] = self.frequency(cell)
             par[cell]["ISI"] = self.interspike(cell)[0]
             par[cell]["ISIV"] = self.interspike(cell)[1]
             par[cell]["TP"] = self.time(cell)["plateau_start"]
             par[cell]["TS"] = self.time(cell)["spike_start"]
-            # par[cell]["TI"] = self.time(cell)["plateau_end"]
-            # par[cell]["AMPs"] = self.amplitudes()
 
         return par
 
     def get_glob_network_parameters(self):
-        A_dst = self.__distances_matrix()
-
         par = dict()
-        par["Rs"] = self.__network_slow.average_correlation()
         par["Rf"] = self.__network_fast.average_correlation()
-        par["Qs"] = self.__network_slow.modularity()
-        par["Qf"] = self.__network_fast.modularity()
-        par["GEs"] = self.__network_slow.global_efficiency()
+        # par["Qf"] = self.__network_fast.modularity()
         par["GEf"] = self.__network_fast.global_efficiency()
-        par["MCCs"] = self.__network_slow.max_connected_component()
         par["MCCf"] = self.__network_fast.max_connected_component()
         if self.__positions is not False:
-            par["Ds"] = self.__network_slow.average_connection_distances(A_dst)
+            A_dst = self.__distances_matrix()
             par["Df"] = self.__network_fast.average_connection_distances(A_dst)
 
         return par
@@ -149,13 +145,8 @@ class Analysis(object):
     def get_ind_network_parameters(self):
         par = [dict() for c in range(self.__cells)]
         for cell in range(self.__cells):
-            par[cell]["NDs"] = self.__network_slow.degree(cell)
             par[cell]["NDf"] = self.__network_fast.degree(cell)
-            par[cell]["Cs"] = self.__network_slow.clustering(cell)
             par[cell]["Cf"] = self.__network_fast.clustering(cell)
-            par[cell]["NNDs"] = self.__network_slow.average_neighbour_degree(
-                cell
-                )
             par[cell]["NNDf"] = self.__network_fast.average_neighbour_degree(
                 cell
                 )
@@ -175,7 +166,7 @@ class Analysis(object):
                 else:
                     mode = "Undefined"
                     p_stripped = p
-                data.append({"Islet ID": self.__id,
+                data.append({"Islet ID": self.__settings["Islet ID"],
                              "Cell ID": c,
                              "Par ID": p,
                              "Glucose": self.__settings["Glucose [mM]"],
@@ -183,8 +174,7 @@ class Analysis(object):
                              "Mode": mode,
                              "Value": ind[c][p]
                              })
-        df = pd.DataFrame(data=data)
-        return df
+        self.__dataframe = pd.DataFrame(data=data)
 
 # ----------------------- INDIVIDUAL PARAMETER METHODS -----------------------
 
@@ -214,7 +204,7 @@ class Analysis(object):
         bin = self.__binarized_fast[cell][start:stop]
         sum = np.sum(bin)
         length = bin.size
-        Nf = self.frequency(cell)[1]*length/self.__sampling
+        Nf = self.frequency(cell)*length/self.__sampling
         if sum == 0:
             return (length, np.nan, np.nan)
         return (length/self.__sampling, sum/length, (sum/self.__sampling)/Nf)
@@ -222,15 +212,7 @@ class Analysis(object):
     def frequency(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
         stop = int(self.__activity[cell][1]*self.__sampling)
-        bin_slow = self.__binarized_slow[cell][start:stop]
         bin_fast = self.__binarized_fast[cell][start:stop]
-
-        slow_peaks = self.__search_sequence(bin_slow, [11, 12])
-        if slow_peaks.size < 2:
-            frequency_slow = np.nan
-        else:
-            slow_interval = slow_peaks[-1]-slow_peaks[0]
-            frequency_slow = (slow_peaks.size-1)/slow_interval*self.__sampling
 
         fast_peaks = self.__search_sequence(bin_fast, [0, 1])
         if fast_peaks.size < 2:
@@ -239,7 +221,20 @@ class Analysis(object):
             fast_interval = fast_peaks[-1]-fast_peaks[0]
             frequency_fast = (fast_peaks.size-1)/fast_interval*self.__sampling
 
-        return (frequency_slow, frequency_fast)
+        return frequency_fast
+
+    def frequency_slow(self, cell):
+        start = int(self.__activity[cell][0]*self.__sampling)
+        stop = int(self.__activity[cell][1]*self.__sampling)
+        bin_slow = self.__binarized_slow[cell][start:stop]
+
+        slow_peaks = self.__search_sequence(bin_slow, [11, 12])
+        if slow_peaks.size < 2:
+            frequency_slow = np.nan
+        else:
+            slow_interval = slow_peaks[-1]-slow_peaks[0]
+            frequency_slow = (slow_peaks.size-1)/slow_interval*self.__sampling
+        return frequency_slow
 
     def interspike(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
@@ -271,8 +266,8 @@ class Analysis(object):
     def time(self, cell):
         bin_fast = self.__binarized_fast[cell]
         time = {}
-        stim_start = self.__settings["Stimulation [frame]"][0]
-        stim_end = self.__settings["Stimulation [frame]"][1]
+        stim_start = int(self.__settings["Stimulation [frame]"][0])
+        stim_end = int(self.__settings["Stimulation [frame]"][1])
 
         time["plateau_start"] = self.__activity[cell][0] - stim_start
         time["plateau_end"] = self.__activity[cell][1] - stim_end
@@ -289,6 +284,7 @@ class Analysis(object):
 # ----------------------------- Spikes vs phases ------------------------------
 
     def spikes_vs_phase(self, mode="normal"):
+        assert self.__binarized_slow and self.__binarized_fast
         phases = np.arange((np.pi/3 - np.pi/6)/2, 2*np.pi, np.pi/6)
         spikes = np.zeros((self.__cells, 12))
 
@@ -327,6 +323,7 @@ class Analysis(object):
 # ------------------------- Correlation vs distance ---------------------------
 
     def correlation_vs_distance(self):
+        assert self.__positions
         A_dst = self.__distances_matrix()
         distances = []
         correlations_slow = []
@@ -344,9 +341,6 @@ class Analysis(object):
 
 # -------------------------- WAVE DETECTION METHODS ---------------------------
     def detect_waves(self, time_th=0.5):
-        if self.__act_sig is not False:
-            return
-
         self.__act_sig = np.zeros_like(self.__binarized_fast, int)
         frame_th = int(time_th*self.__sampling)
         R = self.__distances_matrix()
@@ -385,6 +379,9 @@ class Analysis(object):
         event_num = set(un_num)
         max_event_num = max(event_num)
 
+        length = len(active_cells)
+        count = 1
+
         # The rest of active frames in new iterator
         for frame in iter_active_cells:
             for k, cell in enumerate(active_cells[frame], max_event_num):
@@ -406,6 +403,9 @@ class Analysis(object):
             un_num = np.unique(self.__act_sig[:, frame])
             event_num = list(set(event_num).union(set(un_num)))
             max_event_num = max(event_num)
+
+            count += 1
+            yield count/length
 
     def __conditions(self, frame, nn, nnn, start, end, frame_th):
         cond0 = (nn != nnn)
@@ -462,13 +462,17 @@ class Analysis(object):
 
 # ------------------------------ DRAWING METHODS ------------------------------
 
-    def draw_networks(self, ax1, ax2, colors):
+    def draw_network(self, ax, cell=False):
+        if cell is not False:
+            col = ["C0" for _ in self.__network_fast.nodes()]
+            col[cell] = "C3"
         if self.__positions is False:
-            raise ValueError("No positions specified.")
-        self.__network_slow.draw_network(self.__positions, ax1, colors[0])
-        self.__network_fast.draw_network(self.__positions, ax2, colors[1])
+            self.__network_fast.draw_network(ax=ax, node_color=col)
+        else:
+            self.__network_fast.draw_network(ax=ax, pos=self.__positions)
 
-    def plot_events(self, events, all_events):
+    def plot_events(self, ax):
+        events, all_events = self.characterize_waves()
         for e in (events, all_events):
             rast_plot = []
             zacetki = []
@@ -507,12 +511,9 @@ class Analysis(object):
             fzacetki = np.array(zacetki, float)
             frast_plot = np.array(rast_plot, float)
 
-            fig = plt.figure(figsize=(8, 4))
-            ax = fig.add_subplot(111)
             ax.scatter(frast_plot[:, 0], frast_plot[:, 1],
                        s=0.5, c=frast_plot[:, 2], marker='o'
                        )
             ax.scatter(fzacetki[:, 0], fzacetki[:, 1], s=10.0, marker='+')
             ax.set_xlabel('Time (s)')
             ax.set_ylabel('Cell $i$')
-            plt.show()

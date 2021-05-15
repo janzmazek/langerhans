@@ -1,16 +1,15 @@
 import numpy as np
 
 from scipy.signal import butter, sosfiltfilt
-from scipy.stats import skew, skewnorm, norm
-from scipy.optimize import curve_fit, differential_evolution
+from scipy.stats import skew
+from scipy.optimize import differential_evolution
 
-import matplotlib.pyplot as plt
-from matplotlib.colors import colorConverter
 import matplotlib.transforms as transforms
 import matplotlib.patches as patches
 
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
+    "Islet ID": "S",
     "Glucose [mM]": 8,
     "Sampling [Hz]": 10,
     "Stimulation [frame]": [1200, 0],
@@ -20,14 +19,31 @@ SAMPLE_SETTINGS = {
         "Fast [Hz]": [0.04, 0.4],
         "Plot [s]": [250, 1750]
         },
-    "Distribution order": 5,
     "Exclude":
         {
         "Score threshold": 1,
         "Spikes threshold": 0.01
         },
     "Distance [um]": 1,
-    "Plateau [s]": [0, 0]
+    "Network threshold": 8
+    }
+SAMPLE_SETTINGS_FAST = {
+    "Islet ID": "S",
+    "Glucose [mM]": 8,
+    "Sampling [Hz]": 10,
+    "Stimulation [frame]": [1200, 0],
+    "Filter":
+        {
+        "Fast [Hz]": [0.04, 0.4],
+        "Plot [s]": [250, 1750]
+        },
+    "Exclude":
+        {
+        "Score threshold": 1,
+        "Spikes threshold": 0.01
+        },
+    "Distance [um]": 1,
+    "Network threshold": 8
     }
 STD_RATIO = 2
 
@@ -37,14 +53,18 @@ class Data(object):
     A class for signal analysis.
     """
 # ------------------------------- INITIALIZER ---------------------------------
-    def __init__(self):
+    def __init__(self, slow=False):
         self.__signal = False
         self.__mean_islet = False
         self.__time = False
-        self.__settings = SAMPLE_SETTINGS
+        if slow:
+            self.__settings = SAMPLE_SETTINGS
+        else:
+            self.__settings = SAMPLE_SETTINGS_FAST
 
         self.__points = False
         self.__cells = False
+        self.__positions = False
         self.__filtered_slow = False
         self.__filtered_fast = False
         self.__distributions = False
@@ -72,20 +92,22 @@ class Data(object):
 
         self.__good_cells = np.ones(self.__cells, dtype="bool")
 
+    def import_positions(self, positions):
+        if self.__signal is False:
+            raise ValueError("No imported data!")
+        if len(positions) != self.__cells:
+            raise ValueError("Cell number does not match.")
+        self.__positions = positions
+
     def import_settings(self, settings):
         for key in settings:
-            if key in SAMPLE_SETTINGS:
+            if key in self.__settings:
                 if isinstance(key, dict):
                     for subkey in key:
-                        if subkey in SAMPLE_SETTINGS[key]:
+                        if subkey in self.__settings[key]:
                             self.__settings[subkey] = settings[subkey]
                 else:
                     self.__settings[key] = settings[key]
-        plateau = self.__settings["Plateau [s]"]
-        if plateau[0] != 0 or plateau[1] != 0:
-            self.__activity = np.array(
-                [plateau for cell in range(self.__cells)]
-                )
 
     def import_good_cells(self, cells):
         if self.__signal is False:
@@ -105,12 +127,13 @@ class Data(object):
 
 # --------------------------------- GETTERS -----------------------------------
 
-    def get_settings(self): return self.__settings
-    def get_time(self): return self.__time
     def get_signal(self): return self.__signal
     def get_mean_islet(self): return self.__mean_islet
+    def get_time(self): return self.__time
+    def get_settings(self): return self.__settings
     def get_points(self): return self.__points
     def get_cells(self): return self.__cells
+    def get_positions(self): return self.__positions
     def get_filtered_slow(self): return self.__filtered_slow
     def get_filtered_fast(self): return self.__filtered_fast
     def get_distributions(self): return self.__distributions
@@ -122,20 +145,27 @@ class Data(object):
 # ----------------------------- ANALYSIS METHODS ------------------------------
 # ---------- Filter + smooth ---------- #
 
-    def filter(self):
+    def filter_fast(self):
         if self.__signal is False:
             raise ValueError("No imported data!")
-        slow = self.__settings["Filter"]["Slow [Hz]"]
         fast = self.__settings["Filter"]["Fast [Hz]"]
-        self.__filtered_slow = np.zeros((self.__cells, self.__points))
         self.__filtered_fast = np.zeros((self.__cells, self.__points))
 
         for cell in range(self.__cells):
-            self.__filtered_slow[cell] = self.__bandpass(self.__signal[cell],
-                                                         (*slow)
-                                                         )
             self.__filtered_fast[cell] = self.__bandpass(self.__signal[cell],
-                                                         (*fast)
+                                                         *fast
+                                                         )
+            yield (cell+1)/self.__cells
+
+    def filter_slow(self):
+        if self.__signal is False:
+            raise ValueError("No imported data!")
+        slow = self.__settings["Filter"]["Slow [Hz]"]
+        self.__filtered_slow = np.zeros((self.__cells, self.__points))
+
+        for cell in range(self.__cells):
+            self.__filtered_slow[cell] = self.__bandpass(self.__signal[cell],
+                                                         *slow
                                                          )
             yield (cell+1)/self.__cells
 
@@ -152,7 +182,7 @@ class Data(object):
 # ---------- Distributions ---------- #
 
     def compute_distributions(self):
-        if self.__filtered_slow is False:
+        if self.__filtered_fast is False:
             raise ValueError("No filtered data.")
         self.__distributions = [dict() for i in range(self.__cells)]
 
@@ -284,9 +314,19 @@ class Data(object):
             yield (cell+1)/self.__cells
         self.__binarized_slow = self.__binarized_slow.astype(int)
 
-    def autolimit(self):
+    def crop(self, fixed_boundaries=True):
         if self.__binarized_fast is False:
             raise ValueError("No binarized data.")
+        if fixed_boundaries is True:
+            end = self.__time[-1]
+            self.__activity = [(0, end) for i in range(self.__cells)]
+        else:
+            self.__activity = [
+                list(fixed_boundaries) for i in range(self.__cells)
+                ]
+        self.__activity = np.array(self.__activity)
+
+    def autolimit(self):
         print("Computing activity...")
         self.__activity = [False for i in range(self.__cells)]
         for cell in range(self.__cells):
@@ -315,19 +355,19 @@ class Data(object):
             yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
 
-    def is_analyzed(self):
-        if self.__filtered_slow is False or self.__filtered_fast is False:
+    def is_analyzed(self, slow=False):
+        if slow:
+            if self.__filtered_slow is False or self.__binarized_slow is False:
+                return False
+        if self.__filtered_fast is False or self.__binarized_fast is False:
             return False
-        elif self.__distributions is False:
-            return False
-        elif self.__binarized_slow is False or self.__binarized_fast is False:
+        if self.__distributions is False:
             return False
         elif self.__good_cells is False:
             return False
         elif self.__activity is False:
             return False
-        else:
-            return True
+        return True
 
 # ----------------------------- PLOTTING METHODS ------------------------------
 
