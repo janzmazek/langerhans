@@ -49,10 +49,6 @@ class Analysis(object):
         good_cells = data.get_good_cells()
 
         self.__settings = data.get_settings()
-        try:
-            self.__id = self.__settings["ID"]
-        except KeyError:
-            pass
         self.__sampling = self.__settings["Sampling [Hz]"]
         self.__cells = np.sum(good_cells)
 
@@ -117,6 +113,8 @@ class Analysis(object):
     def get_act_sig(self): return self.__act_sig
 
     def get_dynamic_parameters(self):
+        if self.__cells is False:
+            raise ValueError("Data incomplete.")
         par = [dict() for c in range(self.__cells)]
         for cell in range(self.__cells):
             par[cell]["AD"] = self.activity(cell)[0]
@@ -131,6 +129,8 @@ class Analysis(object):
         return par
 
     def get_glob_network_parameters(self):
+        if self.__network_fast is False:
+            raise ValueError("Data incomplete.")
         par = dict()
         par["Rf"] = self.__network_fast.average_correlation()
         # par["Qf"] = self.__network_fast.modularity()
@@ -143,6 +143,8 @@ class Analysis(object):
         return par
 
     def get_ind_network_parameters(self):
+        if self.__network_fast is False:
+            raise ValueError("Data incomplete.")
         par = [dict() for c in range(self.__cells)]
         for cell in range(self.__cells):
             par[cell]["NDf"] = self.__network_fast.degree(cell)
@@ -467,7 +469,7 @@ class Analysis(object):
             col = ["C0" for _ in self.__network_fast.nodes()]
             col[cell] = "C3"
         if self.__positions is False:
-            self.__network_fast.draw_network(ax=ax, node_color=col)
+            self.__network_fast.draw_network(ax=ax)
         else:
             self.__network_fast.draw_network(ax=ax, pos=self.__positions)
 

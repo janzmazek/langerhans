@@ -101,13 +101,14 @@ class Data(object):
 
     def import_settings(self, settings):
         for key in settings:
-            if key in self.__settings:
-                if isinstance(key, dict):
-                    for subkey in key:
-                        if subkey in self.__settings[key]:
-                            self.__settings[subkey] = settings[subkey]
-                else:
-                    self.__settings[key] = settings[key]
+            if key not in self.__settings:
+                continue
+            if isinstance(settings[key], dict):
+                for subkey in settings[key]:
+                    if subkey in self.__settings[key]:
+                        self.__settings[key][subkey] = settings[key][subkey]
+            else:
+                self.__settings[key] = settings[key]
 
     def import_good_cells(self, cells):
         if self.__signal is False:
@@ -272,8 +273,10 @@ class Data(object):
             return np.array([], dtype="int")  # No match found
 
     def binarize_fast(self):
-        if self.__distributions is False or self.__filtered_fast is False:
-            raise ValueError("No distribution or filtered data.")
+        if self.__filtered_fast is False:
+            raise ValueError("No filtered data.")
+        if self.__distributions is False:
+            raise ValueError("No distributions.")
 
         spikes_th = self.__settings["Exclude"]["Spikes threshold"]
         self.__binarized_fast = np.zeros((self.__cells, self.__points), int)
@@ -327,7 +330,8 @@ class Data(object):
         self.__activity = np.array(self.__activity)
 
     def autolimit(self):
-        print("Computing activity...")
+        if self.__binarized_fast is False:
+            raise ValueError("No binarized data.")
         self.__activity = [False for i in range(self.__cells)]
         for cell in range(self.__cells):
             data = self.__binarized_fast[cell]
