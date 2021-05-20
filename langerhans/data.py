@@ -12,7 +12,7 @@ SAMPLE_SETTINGS = {
     "Islet ID": "S",
     "Glucose [mM]": 8,
     "Sampling [Hz]": 10,
-    "Stimulation [frame]": [1200, 0],
+    "Stimulation [s]": [120, 0],
     "Filter":
         {
         "Slow [Hz]": [0.001, 0.005],
@@ -31,7 +31,7 @@ SAMPLE_SETTINGS_FAST = {
     "Islet ID": "S",
     "Glucose [mM]": 8,
     "Sampling [Hz]": 10,
-    "Stimulation [frame]": [1200, 0],
+    "Stimulation [s]": [120, 0],
     "Filter":
         {
         "Fast [Hz]": [0.04, 0.4],
@@ -192,12 +192,14 @@ class Data(object):
             signal /= np.max(np.abs(signal))
 
             # Define noise from time 0 to start of stimulation
-            start, end = self.__settings["Stimulation [frame]"]
-            noise = signal[:int(start)]
+            start, end = self.__settings["Stimulation [s]"]
+            sampling = self.__settings["Sampling [Hz]"]
+            start, end = int(start*sampling), int(end*sampling)
+            noise = signal[:start]
             if end != 0:
-                spikes = signal[int(start):int(end)]
+                spikes = signal[start:end]
             else:
-                spikes = signal[int(start):]
+                spikes = signal[start:]
 
             # Remove outliers
             q1 = np.quantile(noise, 0.25)
@@ -338,7 +340,7 @@ class Data(object):
             cumsum = np.cumsum(data)
 
             sampling = self.__settings["Sampling [Hz]"]
-            stimulation = self.__settings["Stimulation [frame]"][0]
+            stimulation = self.__settings["Stimulation [s]"][0]
             lower_limit = cumsum[cumsum < 0.1*cumsum[-1]].size
             lower_limit /= sampling  # lower limit in seconds
             upper_limit = (cumsum.size - cumsum[cumsum > 0.9*cumsum[-1]].size)
@@ -354,7 +356,7 @@ class Data(object):
                 )
             self.__activity[cell] = res.x[1:]
 
-            if self.__activity[cell][0] < stimulation/sampling:
+            if self.__activity[cell][0] < stimulation:
                 self.__good_cells[cell] = False
             yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
@@ -426,31 +428,27 @@ class Data(object):
         ax.set_ylabel("Amplitude")
 
     def __plot_protocol(self, ax):
-        sampling = self.__settings["Sampling [Hz]"]
-        glucose = self.__settings["Glucose [mM]"]
-        TA, TAE = self.__settings["Stimulation [frame]"]
-        TA, TAE = TA/sampling, TAE/sampling
+        TA, TAE = self.__settings["Stimulation [s]"]
+        color = "C3" if self.__settings["Glucose [mM]"] == 8 else "C0"
         if TA == 0 or TAE == 0:
             return
-        color = "C0" if glucose == 8 else "C3"
-        trans = transforms.blended_transform_factory(ax.transData,
-                                                     ax.transAxes
-                                                     )
+        trans = transforms.blended_transform_factory(
+            ax.transData, ax.transAxes
+            )
 
         rectangles = {
             '': patches.Rectangle(
-                    (0, 1), TA, 0.075, color='grey', alpha=0.5,
-                    transform=trans, clip_on=False
-                    ),
-            '{} mM'.format(glucose): patches.Rectangle(
-                                    (TA, 1), TAE-TA, 0.1,
-                                    color=color, alpha=0.8,
-                                    transform=trans, clip_on=False
-                                    ),
-            '6 mM': patches.Rectangle((TAE, 1), self.__time[-1]-TAE,
-                                      0.075, color='grey', alpha=0.5,
-                                      transform=trans, clip_on=False
-                                      )
+                (0, 1), TA, 0.075, color='grey', alpha=0.5, transform=trans,
+                clip_on=False
+                ),
+            'High stimulation': patches.Rectangle(
+                (TA, 1), TAE-TA, 0.1, color=color, alpha=0.8, transform=trans,
+                clip_on=False
+                ),
+            'Low stimulation': patches.Rectangle(
+                (TAE, 1), self.__time[-1]-TAE, 0.075, color='grey', alpha=0.5,
+                transform=trans, clip_on=False
+                )
             }
         for r in rectangles:
             ax.add_artist(rectangles[r])
@@ -463,11 +461,10 @@ class Data(object):
                         )
 
     def __plot_stimulation(self, ax):
-        frame_start = self.__settings["Stimulation [frame]"][0]
-        frame_end = self.__settings["Stimulation [frame]"][1]
-        sampling = self.__settings["Sampling [Hz]"]
-        ax.axvline(frame_start/sampling, c="grey")
-        ax.axvline(frame_end/sampling, c="grey")
+        time_start = self.__settings["Stimulation [s]"][0]
+        time_end = self.__settings["Stimulation [s]"][1]
+        ax.axvline(time_start, c="grey")
+        ax.axvline(time_end, c="grey")
 
     def __plot_activity(self, ax, cell):
         if self.__good_cells[cell]:

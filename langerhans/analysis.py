@@ -64,13 +64,10 @@ class Analysis(object):
         self.__activity = np.array(data.get_activity())[good_cells]
         self.__good_cells = good_cells
 
-        pos = data.get_positions()
-        if pos is not False:
-            self.import_positions(pos)
-
-    def import_positions(self, positions):
-        distance = self.__settings["Distance [um]"]
-        self.__positions = positions[self.__good_cells]*distance
+        positions = data.get_positions()
+        if positions is not False:
+            distance = self.__settings["Distance [um]"]
+            self.__positions = positions[self.__good_cells]*distance
 
 # ---------------------------- ANALYSIS FUNCTIONS ----------------------------
     def __search_sequence(self, arr, seq):
@@ -268,8 +265,9 @@ class Analysis(object):
     def time(self, cell):
         bin_fast = self.__binarized_fast[cell]
         time = {}
-        stim_start = int(self.__settings["Stimulation [frame]"][0])
-        stim_end = int(self.__settings["Stimulation [frame]"][1])
+        sampling = self.__settings["Sampling [Hz]"]
+        stim_start = int(self.__settings["Stimulation [s]"][0]*sampling)
+        stim_end = int(self.__settings["Stimulation [s]"][1]*sampling)
 
         time["plateau_start"] = self.__activity[cell][0] - stim_start
         time["plateau_end"] = self.__activity[cell][1] - stim_end
