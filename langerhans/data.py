@@ -54,10 +54,11 @@ class Data(object):
     """
 # ------------------------------- INITIALIZER ---------------------------------
     def __init__(self, slow=False):
+        self.__slow = slow
         self.__signal = False
         self.__mean_islet = False
         self.__time = False
-        if slow:
+        if self.__slow:
             self.__settings = SAMPLE_SETTINGS
         else:
             self.__settings = SAMPLE_SETTINGS_FAST
@@ -340,7 +341,6 @@ class Data(object):
             cumsum = np.cumsum(data)
 
             sampling = self.__settings["Sampling [Hz]"]
-            stimulation = self.__settings["Stimulation [s]"][0]
             lower_limit = cumsum[cumsum < 0.1*cumsum[-1]].size
             lower_limit /= sampling  # lower limit in seconds
             upper_limit = (cumsum.size - cumsum[cumsum > 0.9*cumsum[-1]].size)
@@ -355,14 +355,11 @@ class Data(object):
                  [upper_limit-1, self.__time[-1]]]
                 )
             self.__activity[cell] = res.x[1:]
-
-            if self.__activity[cell][0] < stimulation:
-                self.__good_cells[cell] = False
             yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
 
-    def is_analyzed(self, slow=False):
-        if slow:
+    def is_analyzed(self):
+        if self.__slow:
             if self.__filtered_slow is False or self.__binarized_slow is False:
                 return False
         if self.__filtered_fast is False or self.__binarized_fast is False:

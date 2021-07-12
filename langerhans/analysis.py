@@ -265,9 +265,8 @@ class Analysis(object):
     def time(self, cell):
         bin_fast = self.__binarized_fast[cell]
         time = {}
-        sampling = self.__settings["Sampling [Hz]"]
-        stim_start = int(self.__settings["Stimulation [s]"][0]*sampling)
-        stim_end = int(self.__settings["Stimulation [s]"][1]*sampling)
+        stim_start = int(self.__settings["Stimulation [s]"][0])
+        stim_end = int(self.__settings["Stimulation [s]"][1])
 
         time["plateau_start"] = self.__activity[cell][0] - stim_start
         time["plateau_end"] = self.__activity[cell][1] - stim_end
@@ -277,7 +276,6 @@ class Analysis(object):
             time["spike_start"] = np.nan
         else:
             time["spike_start"] = (np.mean(fast_peaks[:3]))/self.__sampling
-
         return time
 
 # ----------------------------- ANALYSIS METHODS ------------------------------
