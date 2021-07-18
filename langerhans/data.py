@@ -100,6 +100,19 @@ class Data(object):
             raise ValueError("Cell number does not match.")
         self.__positions = positions
 
+    def distances_matrix(self):
+        if self.__positions is False:
+            raise ValueError("No positions specified.")
+        A_dst = np.zeros((self.__cells, self.__cells))
+        for cell1 in range(self.__cells):
+            for cell2 in range(cell1):
+                x1, y1 = self.__positions[cell1, 0], self.__positions[cell1, 1]
+                x2, y2 = self.__positions[cell2, 0], self.__positions[cell2, 1]
+                distance = np.sqrt((x1-x2)**2 + (y1-y2)**2)
+                A_dst[cell1, cell2] = distance
+                A_dst[cell2, cell1] = distance
+        return A_dst
+
     def import_settings(self, settings):
         for key in settings:
             if key not in self.__settings:
