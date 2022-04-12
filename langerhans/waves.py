@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import rankdata
 
 
 class Waves(object):
@@ -119,7 +120,7 @@ class Waves(object):
 
     def characterize_waves(self, small_th=0.1, big_th=0.45, time_th=0.5):
         if self.__act_sig is False:
-            self.detect_waves(time_th)
+            raise ValueError("Waves not detected.")
         print("Characterizing waves...")
         # vse stevilke dogodkov razen nicle - 0=neaktivne celice
         events = np.unique(self.__act_sig[self.__act_sig != 0])
@@ -152,7 +153,7 @@ class Waves(object):
             yield count/length
 
     def plot_act_sig(self, ax):
-        ax.matshow(self.__act_sig)
+        ax.imshow(self.__act_sig, aspect='auto')
 
     def plot_events(self, ax):
         if self.__act_sig is False:
@@ -189,6 +190,7 @@ class Waves(object):
                     init_cells += 1
                     step += 1
 
+                # ranks = rankdata(rast_plot[c], method="min")
                 zacetki[kk].append(start_time/self.__sampling)
                 zacetki[kk].append(-5)
                 zacetki[kk].append(event_num)

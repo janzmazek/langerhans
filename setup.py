@@ -9,5 +9,5 @@ setup(
       license = "MIT License",
       packages = find_packages(exclude=['*test']),
       python_requires='>3.6.0',
-      install_requires = ['numpy', 'scipy', 'matplotlib', 'pandas', 'networkx', 'pyyaml', 'python-louvain']
+      install_requires = ['numpy', 'scipy', 'matplotlib', 'pandas', 'networkx', 'pyyaml', 'python-louvain', 'openpyxl']
 )

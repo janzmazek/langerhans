@@ -534,7 +534,7 @@ class Data(object):
                         )
 
     def plot_events(self, ax):
-        if self.__binarized_slow is False or self.__binarized_fast is False:
+        if self.__binarized_fast is False:
             raise ValueError("No binarized data!")
 
         bin_fast = self.__binarized_fast[self.__good_cells]
