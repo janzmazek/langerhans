@@ -1,4 +1,6 @@
 import numpy as np
+import multiprocessing as mp
+import os
 
 from scipy.signal import butter, sosfiltfilt
 from scipy.stats import skew
@@ -161,6 +163,10 @@ class Data(object):
 # ---------- Filter + smooth ---------- #
 
     def filter_fast(self):
+        for _ in self.filter_fast_progress():
+            pass
+
+    def filter_fast_progress(self):
         if self.__signal is False:
             raise ValueError("No imported data!")
         fast = self.__settings["Filter"]["Fast [Hz]"]
@@ -173,6 +179,10 @@ class Data(object):
             yield (cell+1)/self.__cells
 
     def filter_slow(self):
+        for _ in self.filter_slow_progress():
+            pass
+
+    def filter_slow_progress(self):
         if self.__signal is False:
             raise ValueError("No imported data!")
         slow = self.__settings["Filter"]["Slow [Hz]"]
@@ -197,6 +207,10 @@ class Data(object):
 # ---------- Distributions ---------- #
 
     def compute_distributions(self):
+        for _ in self.compute_distributions_progress():
+            pass
+
+    def compute_distributions_progress(self):
         if self.__filtered_fast is False:
             raise ValueError("No filtered data.")
         self.__distributions = [dict() for i in range(self.__cells)]
@@ -236,8 +250,11 @@ class Data(object):
             yield (cell+1)/self.__cells
 
 # ---------- Exclude ---------- #
-
     def autoexclude(self):
+        for _ in self.autoexclude_progress():
+            pass
+
+    def autoexclude_progress(self):
         if self.__distributions is False:
             raise ValueError("No distributions.")
         # Excluding thresholds
@@ -289,6 +306,10 @@ class Data(object):
             return np.array([], dtype="int")  # No match found
 
     def binarize_fast(self):
+        for _ in self.binarize_fast_progress():
+            pass
+
+    def binarize_fast_progress(self):
         if self.__filtered_fast is False:
             raise ValueError("No filtered data.")
         if self.__distributions is False:
@@ -306,6 +327,10 @@ class Data(object):
             yield (cell+1)/self.__cells
 
     def binarize_slow(self):
+        for _ in self.binarize_slow_progress():
+            pass
+
+    def binarize_slow_progress(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
         self.__binarized_slow = np.zeros((self.__cells, self.__points), int)
@@ -346,30 +371,39 @@ class Data(object):
         self.__activity = np.array(self.__activity)
 
     def autolimit(self):
+        for i in self.autolimit_progress():
+            print(i)
+
+    def autolimit_progress(self):
         if self.__binarized_fast is False:
             raise ValueError("No binarized data.")
         self.__activity = [False for i in range(self.__cells)]
-        for cell in range(self.__cells):
-            data = self.__binarized_fast[cell]
-            cumsum = np.cumsum(data)
+        with mp.Pool(os.cpu_count()) as p:
+            for i, res in enumerate(p.imap(self.autolimit_task, range(self.__cells), 10)):
+                self.__activity[i] = res
+                yield (i+1)/self.__cells
 
-            sampling = self.__settings["Sampling [Hz]"]
-            lower_limit = cumsum[cumsum < 0.1*cumsum[-1]].size
-            lower_limit /= sampling  # lower limit in seconds
-            upper_limit = (cumsum.size - cumsum[cumsum > 0.9*cumsum[-1]].size)
-            upper_limit /= sampling  # upper limit in seconds
-
-            def box(t, a, t_start, t_end):
-                return a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
-            res = differential_evolution(
-                lambda p: np.sum((box(self.__time, *p) - data)**2),
-                [[0, 100],
-                 [0, lower_limit+1],
-                 [upper_limit-1, self.__time[-1]]]
-                )
-            self.__activity[cell] = res.x[1:]
-            yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
+
+    def autolimit_task(self, cell):
+        data = self.__binarized_fast[cell]
+        cumsum = np.cumsum(data)
+
+        sampling = self.__settings["Sampling [Hz]"]
+        lower_limit = cumsum[cumsum < 0.1*cumsum[-1]].size
+        lower_limit /= sampling  # lower limit in seconds
+        upper_limit = (cumsum.size - cumsum[cumsum > 0.9*cumsum[-1]].size)
+        upper_limit /= sampling  # upper limit in seconds
+
+        def box(t, a, t_start, t_end):
+            return a*(np.heaviside(t-t_start, 0)-np.heaviside(t-t_end, 0))
+        res = differential_evolution(
+            lambda p: np.sum((box(self.__time, *p) - data)**2),
+            [[0, 100],
+            [0, lower_limit+1],
+            [upper_limit-1, self.__time[-1]]]
+            )
+        return res.x[1:]
 
     def is_analyzed(self):
         if self.__slow:

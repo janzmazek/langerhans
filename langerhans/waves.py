@@ -31,7 +31,11 @@ class Waves(object):
         self.__distances_matrix = data.distances_matrix()
 
 # -------------------------- WAVE DETECTION METHODS ---------------------------
-    def detect_waves(self, time_th=0.5):
+    def detect_waves(self):
+        for _ in self.detect_waves_progress():
+            pass
+    
+    def detect_waves_progress(self, time_th=0.5):
         self.__act_sig = np.zeros_like(self.__binarized_fast, int)
         frame_th = int(time_th*self.__sampling)
         R = self.__distances_matrix
