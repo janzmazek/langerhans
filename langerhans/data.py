@@ -454,6 +454,11 @@ class Data(object):
             ax2 = ax.twinx()
             ax2.set_ylabel("Action potentials")
 
+        ax.set_xlim(0, self.__time[-1])
+        ax.set_ylim(None, 1.1)
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Amplitude")
+
         if protocol:
             self.__plot_protocol(ax)
 
@@ -466,14 +471,9 @@ class Data(object):
         if noise:
             self.__plot_noise(ax, cell)
 
-        ax.set_xlim(0, self.__time[-1])
-        ax.set_ylim(None, 1.1)
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Amplitude")
-
     def __plot_protocol(self, ax):
         TA, TAE = self.__settings["Stimulation [s]"]
-        color = "C3" if self.__settings["Glucose [mM]"] == 8 else "C0"
+        color = "C3" if self.__settings["Glucose [mM]"] > 8 else "C0"
         if TA == 0 or TAE == 0:
             return
         trans = transforms.blended_transform_factory(
