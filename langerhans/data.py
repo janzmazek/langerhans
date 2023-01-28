@@ -1,6 +1,4 @@
 import numpy as np
-import multiprocessing as mp
-import os
 
 from scipy.signal import butter, sosfiltfilt
 from scipy.stats import skew
@@ -12,30 +10,12 @@ import matplotlib.patches as patches
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
     "Islet ID": "S",
-    "Glucose [mM]": 8,
+    "Glucose [mM]": [6, 8],
+    "Stimulation [s]": [120],
     "Sampling [Hz]": 10,
-    "Stimulation [s]": [120, 0],
     "Filter":
         {
         "Slow [Hz]": [0.001, 0.005],
-        "Fast [Hz]": [0.04, 0.4],
-        "Plot [s]": [250, 1750]
-        },
-    "Exclude":
-        {
-        "Score threshold": 1,
-        "Spikes threshold": 0.01
-        },
-    "Distance [um]": 1,
-    "Network threshold": 8
-    }
-SAMPLE_SETTINGS_FAST = {
-    "Islet ID": "S",
-    "Glucose [mM]": 8,
-    "Sampling [Hz]": 10,
-    "Stimulation [s]": [120, 0],
-    "Filter":
-        {
         "Fast [Hz]": [0.04, 0.4],
         "Plot [s]": [250, 1750]
         },
@@ -55,16 +35,11 @@ class Data(object):
     A class for signal analysis.
     """
 # ------------------------------- INITIALIZER ---------------------------------
-    def __init__(self, slow=False):
-        self.__slow = slow
+    def __init__(self):
         self.__signal = False
         self.__mean_islet = False
         self.__time = False
-        if self.__slow:
-            self.__settings = SAMPLE_SETTINGS
-        else:
-            self.__settings = SAMPLE_SETTINGS_FAST
-
+        self.__settings = SAMPLE_SETTINGS
         self.__points = False
         self.__cells = False
         self.__positions = False
@@ -220,7 +195,11 @@ class Data(object):
             signal /= np.max(np.abs(signal))
 
             # Define noise from time 0 to start of stimulation
-            start, end = self.__settings["Stimulation [s]"]
+            midpoints = self.__settings["Stimulation [s]"]
+            if len(midpoints) > 1:
+                start, end = midpoints[0], midpoints[-1]
+            else:
+                start, end = midpoints[0], self.__time[-1]
             sampling = self.__settings["Sampling [Hz]"]
             start, end = int(start*sampling), int(end*sampling)
             noise = signal[:start]
@@ -363,30 +342,15 @@ class Data(object):
             raise ValueError("No binarized data.")
         if fixed_boundaries is True:
             end = self.__time[-1]
-            self.__activity = [(0, end) for i in range(self.__cells)]
+            self.__activity = (0, end)
         else:
-            self.__activity = [
-                list(fixed_boundaries) for i in range(self.__cells)
-                ]
+            self.__activity = list(fixed_boundaries)
         self.__activity = np.array(self.__activity)
 
     def autolimit(self):
-        for i in self.autolimit_progress():
-            print(i)
-
-    def autolimit_progress(self):
         if self.__binarized_fast is False:
             raise ValueError("No binarized data.")
-        self.__activity = [False for i in range(self.__cells)]
-        with mp.Pool(os.cpu_count()) as p:
-            for i, res in enumerate(p.imap(self.autolimit_task, range(self.__cells), 10)):
-                self.__activity[i] = res
-                yield (i+1)/self.__cells
-
-        self.__activity = np.array(self.__activity)
-
-    def autolimit_task(self, cell):
-        data = self.__binarized_fast[cell]
+        data = np.mean(self.__binarized_fast, axis=0)
         cumsum = np.cumsum(data)
 
         sampling = self.__settings["Sampling [Hz]"]
@@ -403,10 +367,10 @@ class Data(object):
             [0, lower_limit+1],
             [upper_limit-1, self.__time[-1]]]
             )
-        return res.x[1:]
+        self.__activity = res.x[1:]
 
-    def is_analyzed(self):
-        if self.__slow:
+    def is_analyzed(self, slow=False):
+        if slow:
             if self.__filtered_slow is False or self.__binarized_slow is False:
                 return False
         if self.__filtered_fast is False or self.__binarized_fast is False:
@@ -422,8 +386,8 @@ class Data(object):
 # ----------------------------- PLOTTING METHODS ------------------------------
 
     def plot(self, ax, cell, plots=("raw",),
-             protocol=True, stimulation=True, activity=True, noise=False
-             ):
+             protocol=True, stimulation=True, activity=True, excluded=True, 
+             noise=False):
         if "mean" in plots:
             signal = self.__mean_islet
             signal /= np.max(np.abs(signal))
@@ -453,6 +417,9 @@ class Data(object):
             ax.plot(self.__time, binarized_fast, color="k", lw=1)
             ax2 = ax.twinx()
             ax2.set_ylabel("Action potentials")
+        if "bin_mean" in plots:
+            binarized_mean = np.mean(self.__binarized_fast, axis=0)
+            ax.plot(self.__time, binarized_mean, color="k", lw=1)
 
         ax.set_xlim(0, self.__time[-1])
         ax.set_ylim(None, 1.1)
@@ -466,61 +433,59 @@ class Data(object):
             self.__plot_stimulation(ax)
 
         if activity:
-            self.__plot_activity(ax, cell)
+            self.__plot_activity(ax)
 
         if noise:
             self.__plot_noise(ax, cell)
 
+        if excluded:
+            self.__plot_excluded(ax, cell)
+
     def __plot_protocol(self, ax):
-        TA, TAE = self.__settings["Stimulation [s]"]
-        color = "C3" if self.__settings["Glucose [mM]"] > 8 else "C0"
-        if TA == 0 or TAE == 0:
-            return
         trans = transforms.blended_transform_factory(
             ax.transData, ax.transAxes
             )
 
-        rectangles = {
-            '': patches.Rectangle(
-                (0, 1), TA, 0.075, color='grey', alpha=0.5, transform=trans,
-                clip_on=False
-                ),
-            'High stimulation': patches.Rectangle(
-                (TA, 1), TAE-TA, 0.1, color=color, alpha=0.8, transform=trans,
-                clip_on=False
-                ),
-            'Low stimulation': patches.Rectangle(
-                (TAE, 1), self.__time[-1]-TAE, 0.075, color='grey', alpha=0.5,
-                transform=trans, clip_on=False
+        midpoints = [0] + self.__settings["Stimulation [s]"] + [self.__time[-1]]
+        widths = [midpoints[i+1]-midpoints[i] for i in range(len(midpoints)-1)]
+
+        glucose = self.__settings["Glucose [mM]"]
+        rectangles = []
+        max_stim = np.max(glucose)
+
+        for i, g in enumerate(glucose):
+            rectangles.append(
+                patches.Rectangle(
+                (midpoints[i], 1), widths[i], 0.1*g/max_stim,
+                color='grey', alpha=0.5, transform=trans, clip_on=False
                 )
-            }
-        for r in rectangles:
-            ax.add_artist(rectangles[r])
-            rx, ry = rectangles[r].get_xy()
-            cx = rx + rectangles[r].get_width()/2.0
-            cy = ry + rectangles[r].get_height()/2.0
-            ax.annotate(r, (cx, cy), color='k', fontsize=12,
+            )
+
+        for i, r in enumerate(rectangles):
+            ax.add_artist(r)
+            rx, ry = r.get_xy()
+            cx = rx + r.get_width()/2.0
+            cy = ry + r.get_height()/2.0
+            ax.annotate(glucose[i], (cx, cy), color='k', fontsize=12,
                         ha='center', va='center', xycoords=trans,
                         annotation_clip=False
                         )
 
     def __plot_stimulation(self, ax):
-        time_start = self.__settings["Stimulation [s]"][0]
-        time_end = self.__settings["Stimulation [s]"][1]
-        ax.axvline(time_start, c="grey")
-        ax.axvline(time_end, c="grey")
+        for i in self.__settings["Stimulation [s]"]:
+            ax.axvline(i, c="grey")
 
-    def __plot_activity(self, ax, cell):
-        if self.__good_cells[cell]:
+    def __plot_activity(self, ax):
+        if self.__activity is not False:
             if self.__activity is not False:
-                if self.__activity[cell] is not False:
-                    border = self.__activity[cell]
-                    ax.axvspan(0, border[0], alpha=0.25, color="grey")
-                    ax.axvspan(
-                        border[1], self.__time[-1], alpha=0.25, color="grey"
-                        )
-        else:
-            ax.axvspan(0, self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
+                low, high = self.__activity
+                ax.axvspan(0, low, alpha=0.25, color="grey")
+                ax.axvspan(
+                    high, self.__time[-1], alpha=0.25, color="grey"
+                    )
+    def __plot_excluded(self, ax, cell):
+            if not self.__good_cells[cell]:
+                ax.axvspan(0, self.__time[-1], alpha=0.5, color=EXCLUDE_COLOR)
 
     def __plot_noise(self, ax, cell):
         noise = 3*self.__distributions[cell]["noise_params"][2]

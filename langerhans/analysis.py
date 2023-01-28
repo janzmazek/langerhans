@@ -9,10 +9,10 @@ PAR_NAMES = {
     "AT": "Relative Active Time (%)",
     "OD": "Duration of Oscillations (s)",
     "F": "Frequency (1/s)",
-    "ISI": "Interspike Interval (s)",
-    "ISIV": "Interspike Variation (s)",
+    "ISI": "Interoscillation Interval (s)",
+    "ISIV": "Interoscillation Interval Variation (s)",
     "TP": "Time to Plateau (s)",
-    "TS": "Time to Spike (s)",
+    "TS": "Time to Activation (s)",
     "AMPs": "Amplitude Slow",
     "ND": "Node Degree",
     "C": "Clustering Coefficient",
@@ -62,7 +62,7 @@ class Analysis(object):
         self.__binarized_fast = data.get_binarized_fast()[good_cells]
         self.__network_fast = Network(self.__filtered_fast, threshold)
 
-        self.__activity = np.array(data.get_activity())[good_cells]
+        self.__activity = data.get_activity()
         self.__good_cells = good_cells
 
         positions = data.get_positions()
@@ -72,7 +72,6 @@ class Analysis(object):
             self.__distances_matrix = data.distances_matrix()
 
         self.__dataframe = False
-        self.__act_sig = False
 
 # ---------------------------- ANALYSIS FUNCTIONS ----------------------------
     def __search_sequence(self, arr, seq):
@@ -98,8 +97,11 @@ class Analysis(object):
 
     def get_networks(self): return (self.__network_slow, self.__network_fast)
     def get_positions(self): return self.__positions
-    def get_dataframe(self): return self.__dataframe
-    def get_act_sig(self): return self.__act_sig
+    def get_dataframe(self):
+        if not self.__dataframe:
+            raise ValueError("No dataframe.")
+        else:
+            return self.__dataframe
 
     def get_dynamic_parameters(self):
         if self.__cells is False:
@@ -190,8 +192,8 @@ class Analysis(object):
         return amplitudes
 
     def activity(self, cell):
-        start = int(self.__activity[cell][0]*self.__sampling)
-        stop = int(self.__activity[cell][1]*self.__sampling)
+        start = int(self.__activity[0]*self.__sampling)
+        stop = int(self.__activity[1]*self.__sampling)
         bin = self.__binarized_fast[cell][start:stop]
         sum = np.sum(bin)
         length = bin.size
@@ -201,8 +203,8 @@ class Analysis(object):
         return (length/self.__sampling, sum/length, (sum/self.__sampling)/Nf)
 
     def frequency(self, cell):
-        start = int(self.__activity[cell][0]*self.__sampling)
-        stop = int(self.__activity[cell][1]*self.__sampling)
+        start = int(self.__activity[0]*self.__sampling)
+        stop = int(self.__activity[1]*self.__sampling)
         bin_fast = self.__binarized_fast[cell][start:stop]
 
         fast_peaks = self.__search_sequence(bin_fast, [0, 1])
@@ -215,8 +217,8 @@ class Analysis(object):
         return frequency_fast
 
     def frequency_slow(self, cell):
-        start = int(self.__activity[cell][0]*self.__sampling)
-        stop = int(self.__activity[cell][1]*self.__sampling)
+        start = int(self.__activity[0]*self.__sampling)
+        stop = int(self.__activity[1]*self.__sampling)
         bin_slow = self.__binarized_slow[cell][start:stop]
 
         slow_peaks = self.__search_sequence(bin_slow, [11, 12])
@@ -228,12 +230,12 @@ class Analysis(object):
         return frequency_slow
 
     def interspike(self, cell):
-        start = int(self.__activity[cell][0]*self.__sampling)
-        stop = int(self.__activity[cell][1]*self.__sampling)
+        start = int(self.__activity[0]*self.__sampling)
+        stop = int(self.__activity[1]*self.__sampling)
         bin_fast = self.__binarized_fast[cell][start:stop]
 
-        IS_start = self.__search_sequence(bin_fast, [1, 0])
-        IS_end = self.__search_sequence(bin_fast, [0, 1])
+        IS_start = self.__search_sequence(bin_fast, [1, 0])/self.__sampling
+        IS_end = self.__search_sequence(bin_fast, [0, 1])/self.__sampling
 
         if IS_start.size == 0 or IS_end.size == 0:
             return (np.nan, np.nan)
@@ -257,11 +259,11 @@ class Analysis(object):
     def time(self, cell):
         bin_fast = self.__binarized_fast[cell]
         time = {}
-        stim_start = int(self.__settings["Stimulation [s]"][0])
-        stim_end = int(self.__settings["Stimulation [s]"][1])
+        stim_start = 0# int(self.__settings["Stimulation [s]"][0])
+        stim_end = 0#int(self.__settings["Stimulation [s]"][1])
 
-        time["plateau_start"] = self.__activity[cell][0] - stim_start
-        time["plateau_end"] = self.__activity[cell][1] - stim_end
+        time["plateau_start"] = self.__activity[0] - stim_start
+        time["plateau_end"] = self.__activity[1] - stim_end
 
         fast_peaks = self.__search_sequence(bin_fast[stim_start:], [0, 1])
         if len(fast_peaks) < 3:
@@ -280,8 +282,8 @@ class Analysis(object):
 
         # Iterate through cells
         for cell in range(self.__cells):
-            start = int(self.__activity[cell][0]*self.__sampling)
-            stop = int(self.__activity[cell][1]*self.__sampling)
+            start = int(self.__activity[0]*self.__sampling)
+            stop = int(self.__activity[1]*self.__sampling)
 
             bin_slow = self.__binarized_slow[cell][start:stop]
             bin_fast = self.__binarized_fast[cell][start:stop]
@@ -332,10 +334,11 @@ class Analysis(object):
 # ------------------------------ DRAWING METHODS ------------------------------
 
     def draw_network(self, ax, cell=False):
+        col = None
         if cell is not False:
             col = ["C0" for _ in self.__network_fast.nodes()]
             col[cell] = "C3"
         if self.__positions is False:
-            self.__network_fast.draw_network(ax=ax)
+            self.__network_fast.draw_network(ax=ax, node_color=col)
         else:
-            self.__network_fast.draw_network(ax=ax, pos=self.__positions)
+            self.__network_fast.draw_network(ax=ax, pos=self.__positions, node_color=col)

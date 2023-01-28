@@ -229,4 +229,4 @@ class Waves(object):
         if self.__big_events is False:
             raise ValueError("Waves not characterized.")
         for e in (self.__big_events, self.__all_events):
-            self.plot_events_ral_time(ax, e)
+            self.plot_events_real_time(ax, e)
