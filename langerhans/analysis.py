@@ -8,12 +8,13 @@ PAR_NAMES = {
     "AD": "Activity Duration (s)",
     "AT": "Relative Active Time (%)",
     "OD": "Duration of Oscillations (s)",
+    "AF": "Activity Fraction (%)",
     "F": "Frequency (1/s)",
     "ISI": "Interspike Interval (s)",
     "ISIV": "Interspike Variation (s)",
     "TP": "Time to Plateau (s)",
     "TS": "Time to Spike (s)",
-    "AMPs": "Amplitude Slow",
+    "AMP": "Amplitude Slow",
     "ND": "Node Degree",
     "C": "Clustering Coefficient",
     "NND": "Nearest Neighbour Degree",
@@ -45,10 +46,11 @@ class Analysis(object):
 
         self.__act_sig = False
 
-    def import_data(self, data, positions=False, threshold=8):
+    def import_data(self, data, positions=False, slow_threshold=8, fast_threshold=8):
         assert data.is_analyzed()
 
         good_cells = data.get_good_cells()
+        time_offset = data.get_time()[0]
 
         self.__settings = data.get_settings()
         self.__sampling = self.__settings["Sampling [Hz]"]
@@ -61,10 +63,10 @@ class Analysis(object):
         self.__binarized_slow = data.get_binarized_slow()[good_cells]
         self.__binarized_fast = data.get_binarized_fast()[good_cells]
 
-        self.__activity = np.array(data.get_activity())[good_cells]
+        self.__activity = np.array(data.get_activity())[good_cells]-time_offset
 
-        self.__network_slow = Network(self.__filtered_slow, threshold)
-        self.__network_fast = Network(self.__filtered_fast, threshold)
+        self.__network_slow = Network(self.__filtered_slow, slow_threshold)
+        self.__network_fast = Network(self.__filtered_fast, fast_threshold)
 
         if positions is not False:
             distance = self.__settings["Distance [um]"]
@@ -117,14 +119,15 @@ class Analysis(object):
             par[cell]["AD"] = self.activity(cell)[0]
             par[cell]["AT"] = self.activity(cell)[1]
             par[cell]["OD"] = self.activity(cell)[2]
+            par[cell]["AF"] = self.activity_fraction(cell)
             par[cell]["Fs"] = self.frequency(cell)[0]
             par[cell]["Ff"] = self.frequency(cell)[1]
             par[cell]["ISI"] = self.interspike(cell)[0]
             par[cell]["ISIV"] = self.interspike(cell)[1]
-            par[cell]["TP"] = self.time(cell)["plateau_start"]
-            par[cell]["TS"] = self.time(cell)["spike_start"]
+            # par[cell]["TP"] = self.time(cell)["plateau_start"]
+            # par[cell]["TS"] = self.time(cell)["spike_start"]
             # par[cell]["TI"] = self.time(cell)["plateau_end"]
-            # par[cell]["AMPs"] = self.amplitudes()
+            par[cell]["AMPs"] = self.amplitudes(cell)
 
         return par
 
@@ -177,8 +180,7 @@ class Analysis(object):
                     p_stripped = p
                 data.append({"Islet ID": self.__id,
                              "Cell ID": c,
-                             "Par ID": p,
-                             "Glucose": self.__settings["Glucose [mM]"],
+                             "Par ID": p,""
                              "Parameter": PAR_NAMES[p_stripped],
                              "Mode": mode,
                              "Value": ind[c][p]
@@ -188,25 +190,29 @@ class Analysis(object):
 
 # ----------------------- INDIVIDUAL PARAMETER METHODS -----------------------
 
-    def amplitudes(self):
-        amplitudes = []
-        for cell in range(self.__cells):
-            heavisided_gradient = np.heaviside(
-                np.gradient(self.__filtered_slow[cell]), 0
-                )
-            minima = self.__search_sequence(heavisided_gradient, [0, 1])
-            maxima = self.__search_sequence(heavisided_gradient, [1, 0])
-
-            if maxima[0] < minima[0]:
-                maxima = np.delete(maxima, 0)
-            if maxima[-1] < minima[-1]:
-                minima = np.delete(minima, 0)
-
-            for i, j in zip(minima, maxima):
-                amplitudes.append(
-                    self.__filtered_slow[cell][j]-self.__filtered_slow[cell][i]
-                    )
-        return amplitudes
+    def amplitudes(self, cell, use_activity_window=False):
+        amps = []
+        if use_activity_window:
+            start = int(self.__activity[cell][0] * self.__sampling)
+            stop = int(self.__activity[cell][1] * self.__sampling)
+            signal = self.__filtered_slow[cell][start:stop]
+        else:
+            signal = self.__filtered_slow[cell]
+        heavisided_gradient = np.heaviside(np.gradient(signal), 0)
+        minima = self.__search_sequence(heavisided_gradient, [0, 1])
+        maxima = self.__search_sequence(heavisided_gradient, [1, 0])
+        # Collect all extrema indices
+        extrema_indices = np.concatenate((minima, maxima))
+        extrema_indices.sort()
+        amps_cell = [abs(signal[idx]) for idx in extrema_indices]
+        amps.append(amps_cell)
+        return np.mean(amps)
+    
+    def activity_fraction(self, cell):
+        bin = self.__binarized_fast[cell]
+        sum = np.sum(bin)
+        length = bin.size
+        return sum/length
 
     def activity(self, cell):
         start = int(self.__activity[cell][0]*self.__sampling)
@@ -459,6 +465,68 @@ class Analysis(object):
                 all_events.append(characteristics)
 
         return (big_events, all_events)
+    
+    def calculate_activity(self, cell, Tw=48, slide_interval=12):
+        if slide_interval > Tw:
+            raise ValueError("slide_interval mora biti manjši ali enak Tw.")
+
+        # Pretvorba v število vzorcev (frame-ov)
+        fs = self.__sampling
+        window_length = int(Tw * fs)
+        slide_interval_frames = int(slide_interval * fs)
+        
+        signal = self.__binarized_fast[cell]
+
+        window_starts = np.arange(0, self.__points - window_length + 1, slide_interval_frames)
+        window_times = window_starts / fs + Tw / 2
+
+        kernel = np.ones(window_length) / window_length
+        activity = np.convolve(signal, kernel, mode="valid")[::slide_interval_frames]
+        
+        # Normalize if variation exists
+        range_ = np.ptp(activity)
+        if range_ > 0:
+            norm_activity = (activity - np.min(activity)) / range_
+        else:
+            norm_activity = activity.copy()
+            
+        return window_times, norm_activity
+
+    def plot_activity(self, ax, cell, Tw=48, slide_interval=12):       
+        # Izris binariziranega signala (siv odtenek)
+        ax.plot(np.arange(self.__points)/self.__sampling, self.__binarized_fast[cell],
+                label="Binarized signal", color="lightgray", linewidth=1)
+
+        # Izris evolucije aktivnosti (rdeča črta z markerji)
+        ax.plot(*self.calculate_activity(cell, Tw, slide_interval), 
+                label="Activity evolution", color="C3", marker="o"
+                )
+        
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Activity")
+        ax.set_title(f"Cell {cell}")
+        ax.legend()
+
+    def calculate_activation(self, reverse=False, Tw=48, slide_interval=12, Tstart=150, Ath=0.2):
+        activation_times = np.full(self.__cells, np.nan)
+
+        for cell in range(self.__cells):
+            window_times, norm_activity = self.calculate_activity(cell, Tw, slide_interval)
+            times = window_times[(window_times>Tstart) & (norm_activity>Ath)]
+            activation_times[cell] = times[-1] if reverse else times[0]
+        
+        return activation_times
+    
+    def plot_activation_positions(self, ax, Tstart=150, Ath=0.2):
+        sc = ax.scatter(self.__positions[:, 0], self.__positions[:, 1],
+                        c=self.calculate_activation(Tstart, Ath), 
+                        cmap="jet", s=50, edgecolors="k"
+                        )
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_title("Activations of cells")
+        cbar = plt.colorbar(sc, ax=ax)
+        cbar.set_label("Activation time (s)")
 
 # ------------------------------ DRAWING METHODS ------------------------------
 

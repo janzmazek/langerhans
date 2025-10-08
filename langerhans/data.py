@@ -1,25 +1,21 @@
 import numpy as np
+from copy import deepcopy
 
-from scipy.signal import butter, sosfiltfilt
-from scipy.stats import skew, skewnorm, norm
-from scipy.optimize import curve_fit, differential_evolution
+from scipy.signal import butter, sosfiltfilt, filtfilt
+from scipy.stats import skew
+from scipy.optimize import differential_evolution
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import colorConverter
 import matplotlib.transforms as transforms
-import matplotlib.patches as patches
 
 EXCLUDE_COLOR = 'xkcd:salmon'
 SAMPLE_SETTINGS = {
-    "Glucose [mM]": 8,
+    "Islet ID": "None",
+    "Protocol": 8,
     "Sampling [Hz]": 10,
     "Stimulation [frame]": [1200, 0],
-    "Filter":
-        {
-        "Slow [Hz]": [0.001, 0.005],
-        "Fast [Hz]": [0.04, 0.4],
-        "Plot [s]": [250, 1750]
-        },
+    "Filter [Hz]": [0.002, 0.01, 0.6],
     "Distribution order": 5,
     "Exclude":
         {
@@ -71,6 +67,34 @@ class Data(object):
         self.__cells = len(self.__signal)
 
         self.__good_cells = np.ones(self.__cells, dtype="bool")
+        
+    def copy(self):
+        return deepcopy(self)
+
+    def strip(self, frame_start, frame_end):
+        signal = self.__signal[:, frame_start:frame_end]
+        good_cells = self.__good_cells
+        time = self.__time[frame_start:frame_end]
+        self.import_data(signal)
+        self.__good_cells = good_cells
+        self.__time = time
+        
+        self.__filtered_slow = self.__filtered_slow[:, frame_start:frame_end]
+        self.__filtered_fast = self.__filtered_fast[:, frame_start:frame_end]
+        self.__binarized_slow = self.__binarized_slow[:, frame_start:frame_end]
+        self.__binarized_fast = self.__binarized_fast[:, frame_start:frame_end]
+        start, end = self.__time[0], self.__time[-1]
+        self.__activity = np.clip(self.__activity, a_min=start, a_max=end)
+
+        frames = self.__settings["Stimulation [frame]"]
+        protocol = self.__settings["Protocol"]
+        while frames and frame_start >= frames[0]:
+            frames.pop(0)
+            protocol.pop(0)
+
+        while frames and frame_end <= frames[-1]:
+            frames.pop(-1)
+            protocol.pop(-1)
 
     def import_settings(self, settings):
         for key in settings:
@@ -125,35 +149,49 @@ class Data(object):
     def filter(self):
         if self.__signal is False:
             raise ValueError("No imported data!")
-        slow = self.__settings["Filter"]["Slow [Hz]"]
-        fast = self.__settings["Filter"]["Fast [Hz]"]
-        self.__filtered_slow = np.zeros((self.__cells, self.__points))
-        self.__filtered_fast = np.zeros((self.__cells, self.__points))
+        lowcut, midcut, highcut = self.__settings["Filter [Hz]"]
+        
+        self.__filtered_slow = np.zeros((self.__cells, self.__points), dtype=np.float32)
+        self.__filtered_fast = np.zeros((self.__cells, self.__points), dtype=np.float32)
 
+        
         for cell in range(self.__cells):
-            self.__filtered_slow[cell] = self.__bandpass(self.__signal[cell],
-                                                         (*slow)
-                                                         )
-            self.__filtered_fast[cell] = self.__bandpass(self.__signal[cell],
-                                                         (*fast)
-                                                         )
+            # Bandpass filter for trend and noise removal
+            detrended = self.__bandpass(
+                self.__signal[cell], lowcut=lowcut, highcut=highcut, order=4
+                )
+            detrended -= np.mean(detrended)
+            detrended /= np.max(detrended)
+            
+            # Low-pass filter for slow component
+            slow = self.__lowpass(detrended, cutoff=midcut, order=4)
+            fast = detrended - slow
+            
+            self.__signal[cell] = detrended
+            self.__filtered_slow[cell] = slow
+            self.__filtered_fast[cell] = fast
             yield (cell+1)/self.__cells
 
-    def __bandpass(self, data, lowcut, highcut, order=5):
-        nyq = 0.5*self.__settings["Sampling [Hz]"]
+    def __bandpass(self, data, lowcut, highcut, order=4):
+        nyq = 0.5 * self.__settings["Sampling [Hz]"]
         low = lowcut / nyq
         high = highcut / nyq
-        sos = butter(
-            order, [low, high], analog=False, btype='band', output='sos'
-            )
-        y = sosfiltfilt(sos, data)
-        return y
+        b, a = butter(order, [low, high], btype='band')
+        return filtfilt(b, a, data)
+
+    def __lowpass(self, data, cutoff, order=4):
+        nyq = 0.5 * self.__settings["Sampling [Hz]"]
+        normal_cutoff = cutoff / nyq
+        b, a = butter(order, normal_cutoff, btype='low')
+        return filtfilt(b, a, data)
 
 # ---------- Distributions ---------- #
 
     def compute_distributions(self):
         if self.__filtered_slow is False:
             raise ValueError("No filtered data.")
+        if not self.__settings["Stimulation [frame]"]:
+            raise ValueError("No stimulation frames defined.")
         self.__distributions = [dict() for i in range(self.__cells)]
 
         for cell in range(self.__cells):
@@ -161,7 +199,8 @@ class Data(object):
             signal /= np.max(np.abs(signal))
 
             # Define noise from time 0 to start of stimulation
-            start, end = self.__settings["Stimulation [frame]"]
+            start = self.__settings["Stimulation [frame]"][0]
+            end = self.__settings["Stimulation [frame]"][-1]
             noise = signal[:int(start)]
             if end != 0:
                 spikes = signal[int(start):int(end)]
@@ -294,7 +333,6 @@ class Data(object):
             cumsum = np.cumsum(data)
 
             sampling = self.__settings["Sampling [Hz]"]
-            stimulation = self.__settings["Stimulation [frame]"][0]
             lower_limit = cumsum[cumsum < 0.1*cumsum[-1]].size
             lower_limit /= sampling  # lower limit in seconds
             upper_limit = (cumsum.size - cumsum[cumsum > 0.9*cumsum[-1]].size)
@@ -310,8 +348,10 @@ class Data(object):
                 )
             self.__activity[cell] = res.x[1:]
 
-            if self.__activity[cell][0] < stimulation/sampling:
-                self.__good_cells[cell] = False
+            if self.__settings["Stimulation [frame]"]:
+                stimulation = self.__settings["Stimulation [frame]"][0]
+                if self.__activity[cell][0] < stimulation/sampling:
+                    self.__good_cells[cell] = False
             yield (cell+1)/self.__cells
         self.__activity = np.array(self.__activity)
 
@@ -332,7 +372,7 @@ class Data(object):
 # ----------------------------- PLOTTING METHODS ------------------------------
 
     def plot(self, ax, cell, plots=("raw",),
-             protocol=True, stimulation=True, activity=True, noise=False
+             protocol=True, activity=False, noise=False
              ):
         if "mean" in plots:
             signal = self.__mean_islet
@@ -340,16 +380,16 @@ class Data(object):
             ax.plot(self.__time, signal, "k", alpha=0.25, lw=0.1)
         if "raw" in plots:
             signal = self.__signal[cell]
-            signal = signal - np.mean(signal)
-            signal /= np.max(np.abs(signal))
-            ax.plot(self.__time, signal, "k", alpha=0.5, lw=0.1)
+            # signal = signal - np.mean(signal)
+            # signal /= np.max(np.abs(signal))
+            ax.plot(self.__time, signal, "k", alpha=1, lw=0.05)
         if "slow" in plots:
             filtered_slow = self.__filtered_slow[cell]
-            filtered_slow = filtered_slow/np.max(filtered_slow)
+            # filtered_slow = filtered_slow/np.max(filtered_slow)
             ax.plot(self.__time, filtered_slow, color="C0", lw=2)
         if "fast" in plots:
             filtered_fast = self.__filtered_fast[cell]
-            filtered_fast = filtered_fast/np.max(filtered_fast)
+            # filtered_fast = filtered_fast/np.max(filtered_fast)
             ax.plot(self.__time, filtered_fast, color="C3", lw=0.2)
         if "bin_slow" in plots:
             binarized_slow = self.__binarized_slow[cell]
@@ -367,63 +407,52 @@ class Data(object):
         if protocol:
             self.__plot_protocol(ax)
 
-        if stimulation:
-            self.__plot_stimulation(ax)
-
         if activity:
             self.__plot_activity(ax, cell)
 
         if noise:
             self.__plot_noise(ax, cell)
 
-        ax.set_xlim(0, self.__time[-1])
+        ax.set_xlim(self.__time[0], self.__time[-1])
         ax.set_ylim(None, 1.1)
         ax.set_xlabel("Time [s]")
         ax.set_ylabel("Amplitude")
 
     def __plot_protocol(self, ax):
         sampling = self.__settings["Sampling [Hz]"]
-        glucose = self.__settings["Glucose [mM]"]
-        TA, TAE = self.__settings["Stimulation [frame]"]
-        TA, TAE = TA/sampling, TAE/sampling
-        if TA == 0 or TAE == 0:
+        protocol = self.__settings["Protocol"]
+        stimulation = np.concatenate(
+            ([self.__time[0]], 
+             np.array(self.__settings["Stimulation [frame]"])/sampling, 
+             [self.__time[-1]])
+            )
+
+        # Skip if invalid stimulation
+        if stimulation[1] == 0 or stimulation[-1] == 0:
             return
-        color = "C0" if glucose == 8 else "C3"
-        trans = transforms.blended_transform_factory(ax.transData,
-                                                     ax.transAxes
-                                                     )
 
-        rectangles = {
-            '': patches.Rectangle(
-                    (0, 1), TA, 0.075, color='grey', alpha=0.5,
-                    transform=trans, clip_on=False
-                    ),
-            '{} mM'.format(glucose): patches.Rectangle(
-                                    (TA, 1), TAE-TA, 0.1,
-                                    color=color, alpha=0.8,
-                                    transform=trans, clip_on=False
-                                    ),
-            '6 mM': patches.Rectangle((TAE, 1), self.__time[-1]-TAE,
-                                      0.075, color='grey', alpha=0.5,
-                                      transform=trans, clip_on=False
-                                      )
-            }
-        for r in rectangles:
-            ax.add_artist(rectangles[r])
-            rx, ry = rectangles[r].get_xy()
-            cx = rx + rectangles[r].get_width()/2.0
-            cy = ry + rectangles[r].get_height()/2.0
-            ax.annotate(r, (cx, cy), color='k', fontsize=12,
-                        ha='center', va='center', xycoords=trans,
-                        annotation_clip=False
-                        )
+        trans = transforms.blended_transform_factory(ax.transData, ax.transAxes)
+        height = 0.05  # Small bar height
+        y_top = 1.01   # Place just above the top of the plot
 
-    def __plot_stimulation(self, ax):
-        frame_start = self.__settings["Stimulation [frame]"][0]
-        frame_end = self.__settings["Stimulation [frame]"][1]
-        sampling = self.__settings["Sampling [Hz]"]
-        ax.axvline(frame_start/sampling, c="grey")
-        ax.axvline(frame_end/sampling, c="grey")
+        # Use ax.barh for bulk drawing (faster than adding patches individually)
+        starts = stimulation[:-1]
+        widths = stimulation[1:] - stimulation[:-1]
+
+        for start, width, label in zip(starts, widths, protocol):
+            # Draw rectangle
+            rect = plt.Rectangle((start, y_top), width, height, transform=trans,
+                                 color='grey', alpha=0.5, clip_on=False)
+            ax.add_patch(rect)
+
+            # Add centered text
+            cx = start + width / 2
+            cy = y_top + height / 2
+            ax.text(cx, cy, label, ha='center', va='center', fontsize=7,
+                    transform=trans, clip_on=False)
+
+        for s in stimulation:
+            ax.axvline(s, c="grey")
 
     def __plot_activity(self, ax, cell):
         if self.__good_cells[cell]:
